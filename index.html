@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ezra's Capybara Escape Game</title>
+<link rel="icon" href="data:,">
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #1b2a1b;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Segoe UI", Verdana, sans-serif;
+  }
+  #wrap { position: relative; }
+  canvas {
+    background: #4c9a4c;
+    border: 6px solid #5b3a1e;
+    border-radius: 6px;
+    display: block;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+  #hud {
+    position: absolute; top: 14px; left: 14px; right: 14px;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    font-size: 14px;
+  }
+  #levelLabel { font-weight: 700; font-size: 16px; text-align: center; }
+  #suspicionBar {
+    width: 160px; height: 14px; background: rgba(0,0,0,0.4);
+    border: 2px solid #fff; border-radius: 7px; overflow: hidden;
+  }
+  #suspicionFill {
+    height: 100%; width: 0%; background: #ffcc33; transition: width 0.08s linear, background 0.15s;
+  }
+  .overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: rgba(10, 20, 10, 0.85); color: #fff; gap: 14px;
+    border-radius: 2px; padding: 20px; box-sizing: border-box;
+  }
+  .overlay h1 { margin: 0; font-size: 36px; letter-spacing: 1px; }
+  .overlay h2 { margin: 0; font-size: 26px; color: #ffe28a; }
+  .overlay p { margin: 0; max-width: 500px; line-height: 1.5; font-size: 15px; color: #dcd; }
+  .overlay .credit-line { font-size: 18px; color: #ffe28a; font-weight: 600; }
+  .overlay button {
+    margin-top: 8px; padding: 10px 26px; font-size: 16px; font-weight: 600;
+    background: #ffcc33; border: none; border-radius: 8px; cursor: pointer;
+    color: #3a2a05;
+  }
+  .overlay button:hover { background: #ffd966; }
+  .hidden { display: none !important; }
+  #timerLabel { text-align: right; }
+  #muteBtn {
+    pointer-events: auto; margin-top: 6px; background: rgba(0,0,0,0.4);
+    border: 1px solid #fff; color: #fff; border-radius: 6px; padding: 2px 9px;
+    cursor: pointer; font-size: 14px;
+  }
+  #muteBtn:hover { background: rgba(0,0,0,0.6); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="960" height="640"></canvas>
+  <div id="hud">
+    <div>
+      <div>Suspicion</div>
+      <div id="suspicionBar"><div id="suspicionFill"></div></div>
+      <div id="livesLabel">❤️❤️❤️</div>
+    </div>
+    <div id="levelLabel">Level 1 — The Zoo</div>
+    <div id="timerLabel">
+      <div>Time: <span id="timeVal">0.0</span>s</div>
+      <button id="muteBtn" title="Toggle sound">🔊</button>
+    </div>
+  </div>
+
+  <div id="creditsScreen" class="overlay">
+    <h1>🐹 Ezra's Capybara Escape Game</h1>
+    <div class="credit-line">Please play to start</div>
+    <p>Guide the capybara through four levels: sneak out of the <b>zoo</b>,
+    dash across a busy <b>road</b>, cross a quiet <b>field</b>, and climb a
+    snowy <b>mountain</b> to freedom. Move with <b>WASD</b> or <b>Arrow Keys</b>.
+    Duck into bushes, parked cars, tall grass or snowdrifts to hide — they
+    block a watcher's line of sight. You have <b>3 lives</b> — get caught
+    three times and it's back to the start!</p>
+    <button id="startBtn">Start Escape</button>
+  </div>
+
+  <div id="levelIntroScreen" class="overlay hidden">
+    <h2 id="introTitle">Level 2 — The Road</h2>
+    <p id="introTip"></p>
+    <button id="introContinueBtn">Continue</button>
+  </div>
+
+  <div id="caughtScreen" class="overlay hidden">
+    <h1>🚨 Caught!</h1>
+    <p id="caughtMsg">Someone spotted you.</p>
+    <button id="retryBtn">Try Again</button>
+  </div>
+
+  <div id="gameOverScreen" class="overlay hidden">
+    <h1>💀 Game Over</h1>
+    <p id="gameOverMsg">You ran out of chances.</p>
+    <p>Out of lives! It's back to the start of the zoo for you.</p>
+    <button id="startOverBtn">Start Over</button>
+  </div>
+
+  <div id="winScreen" class="overlay hidden">
+    <h1>🎉 Freedom!</h1>
+    <p>You scaled the mountain and reached the summit, far from the zoo, the
+    road, the field, and every last person — and reindeer — chasing you.
+    Total time: <span id="winTime">0</span> seconds.</p>
+    <button id="playAgainBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const DEG = Math.PI/180;
+
+/* ---------- Audio ---------- */
+
+let audioCtx = null;
+let masterGain = null;
+let muted = localStorage.getItem('capybara_muted') === '1';
+
+function ensureAudio() {
+  if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = muted ? 0 : 0.35;
+  masterGain.connect(audioCtx.destination);
+}
+
+function setMuted(m) {
+  muted = m;
+  localStorage.setItem('capybara_muted', muted ? '1' : '0');
+  if (masterGain) masterGain.gain.value = muted ? 0 : 0.35;
+  document.getElementById('muteBtn').textContent = muted ? '🔇' : '🔊';
+}
+
+function tone(freq, duration, opts = {}) {
+  if (!audioCtx || muted) return;
+  const { type = 'sine', vol = 0.3, delay = 0, sweepTo = null } = opts;
+  const t0 = audioCtx.currentTime + delay;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (sweepTo) osc.frequency.linearRampToValueAtTime(sweepTo, t0 + duration);
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(vol, t0 + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+  osc.connect(gain); gain.connect(masterGain);
+  osc.start(t0); osc.stop(t0 + duration + 0.02);
+}
+
+function noiseBurst(duration, vol = 0.2, delay = 0) {
+  if (!audioCtx || muted) return;
+  const t0 = audioCtx.currentTime + delay;
+  const size = Math.floor(audioCtx.sampleRate * duration);
+  const buffer = audioCtx.createBuffer(1, size, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < size; i++) data[i] = (Math.random()*2-1) * (1 - i/size);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(vol, t0);
+  src.connect(gain); gain.connect(masterGain);
+  src.start(t0);
+}
+
+function sfxClick() { tone(700, 0.07, {type:'square', vol:0.2}); }
+function sfxStep() { tone(200 + Math.random()*30, 0.045, {type:'triangle', vol:0.06}); }
+function sfxHide() { noiseBurst(0.18, 0.12); }
+function sfxCaught() {
+  tone(420, 0.45, {type:'sawtooth', vol:0.28, sweepTo:90});
+  tone(420, 0.45, {type:'sawtooth', vol:0.22, delay:0.18, sweepTo:90});
+}
+function sfxLevelComplete() {
+  [523, 659, 784].forEach((f,i) => tone(f, 0.16, {type:'sine', vol:0.28, delay:i*0.11}));
+}
+function sfxWin() {
+  [523, 659, 784, 1047].forEach((f,i) => tone(f, 0.2, {type:'sine', vol:0.3, delay:i*0.13}));
+}
+function sfxBeep(freq) { tone(freq, 0.08, {type:'square', vol:0.18}); }
+
+function sfxLionRoar() {
+  tone(180, 0.5, {type:'sawtooth', vol:0.25, sweepTo:70});
+  tone(140, 0.6, {type:'sawtooth', vol:0.18, delay:0.08, sweepTo:60});
+  noiseBurst(0.4, 0.08, 0.05);
+}
+function sfxBirdChirp() {
+  const base = 1400 + Math.random()*400;
+  tone(base, 0.09, {type:'sine', vol:0.18, sweepTo: base+300});
+  tone(base-200, 0.08, {type:'sine', vol:0.15, delay:0.12, sweepTo: base+100});
+  tone(base+150, 0.07, {type:'sine', vol:0.14, delay:0.24, sweepTo: base+350});
+}
+function sfxSnakeHiss() {
+  noiseBurst(0.35, 0.16, 0);
+  noiseBurst(0.2, 0.1, 0.12);
+}
+const ANIMAL_SFX = { lion: sfxLionRoar, birds: sfxBirdChirp, reptile: sfxSnakeHiss };
+
+function sfxWaterfall() {
+  noiseBurst(0.9, 0.10, 0);
+  noiseBurst(0.7, 0.07, 0.15);
+  noiseBurst(0.5, 0.05, 0.35);
+}
+
+/* ---------- Shared helpers ---------- */
+
+function borderWalls(gateX, gateW, wtype, color) {
+  return [
+    {x:0, y:0, w:gateX, h:20, type:wtype, color},
+    {x:gateX+gateW, y:0, w:W-(gateX+gateW), h:20, type:wtype, color},
+    {x:0, y:H-20, w:W, h:20, type:wtype, color},
+    {x:0, y:0, w:20, h:H, type:wtype, color},
+    {x:W-20, y:0, w:20, h:H, type:wtype, color},
+  ];
+}
+
+function makeLaneCars(lanes) {
+  const cars = [];
+  lanes.forEach(l => {
+    for (let i = 0; i < 3; i++) {
+      const x = ((l.offset + i*320) % (W+120)) - 60;
+      cars.push({x, y:l.y-16, w:60, h:32, dir:l.dir, speed:l.speed, startX:x, laneY:l.y-16});
+    }
+  });
+  return cars;
+}
+
+const GATE_X = 560, GATE_W = 200;
+const EXIT = {x:GATE_X, y:-10, w:GATE_W, h:50};
+
+/* ---------- Level 1: The Zoo ---------- */
+
+const penWalls = [
+  {x:360, y:440, w:20, h:180, type:'fence'},
+  {x:580, y:440, w:20, h:180, type:'fence'},
+  {x:360, y:440, w:90, h:20, type:'fence'},
+  {x:490, y:440, w:90, h:20, type:'fence'},
+];
+const zooEnclosures = [
+  {x:100, y:300, w:220, h:140, type:'fence', label:'Lion Den', animal:'lion'},
+  {x:640, y:280, w:220, h:160, type:'fence', label:'Aviary', animal:'birds'},
+  {x:350, y:120, w:260, h:110, type:'fence', label:'Reptile House', animal:'reptile'},
+];
+
+const level1 = {
+  name: 'Level 1 — The Zoo',
+  tip: 'Sneak past the zookeepers and slip through the gate. Duck into bushes to break their line of sight.',
+  theme: 'zoo',
+  exitLabel: 'ZOO EXIT',
+  playerStart: {x:468, y:550},
+  obstacles: [...borderWalls(GATE_X, GATE_W, 'fence'), ...penWalls, ...zooEnclosures],
+  bushes: [
+    {x:140, y:470, w:70, h:50, style:'bush'},
+    {x:760, y:470, w:70, h:50, style:'bush'},
+    {x:430, y:250, w:80, h:50, style:'bush'},
+  ],
+  decor: [
+    {x:60,y:80},{x:900,y:100},{x:60,y:560},{x:900,y:560},
+    {x:300,y:60},{x:660,y:60},{x:60,y:340},{x:900,y:340},
+  ],
+  hazardDefs: [
+    { type:'human', mode:'cone', pts:[{x:40,y:470},{x:340,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', mode:'cone', pts:[{x:600,y:470},{x:920,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', mode:'cone', pts:[{x:40,y:250},{x:920,y:250}], speed:85, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', mode:'cone', pts:[{x:800,y:270},{x:800,y:60}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+  ],
+  vehicleDefs: [],
+  exitGate: EXIT,
+};
+
+/* ---------- Level 2: The Road ---------- */
+
+const level2 = {
+  name: 'Level 2 — The Road',
+  tip: "Time your dash between cars and past the pedestrians. There's a grassy median halfway across to catch your breath.",
+  theme: 'road',
+  exitLabel: 'CROSS HERE',
+  playerStart: {x:468, y:565},
+  obstacles: [...borderWalls(GATE_X, GATE_W, 'wall', '#555')],
+  bushes: [
+    {x:120, y:540, w:70, h:40, style:'car'},
+    {x:770, y:540, w:70, h:40, style:'car'},
+    {x:440, y:305, w:80, h:30, style:'bush'},
+    {x:770, y:80, w:70, h:40, style:'bush'},
+  ],
+  decor: [{x:50,y:50},{x:910,y:50},{x:50,y:600},{x:910,y:600}],
+  hazardDefs: [
+    { type:'human', mode:'cone', pts:[{x:60,y:540},{x:430,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', mode:'cone', pts:[{x:530,y:540},{x:900,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', mode:'cone', pts:[{x:60,y:100},{x:920,y:100}], speed:95, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+  ],
+  vehicleDefs: makeLaneCars([
+    {y:195, dir:1, speed:140, offset:0},
+    {y:265, dir:-1, speed:110, offset:120},
+    {y:375, dir:1, speed:160, offset:240},
+    {y:445, dir:-1, speed:125, offset:40},
+  ]),
+  exitGate: EXIT,
+  roadBands: {sidewalkTop:[40,160], sidewalkBottom:[480,620], median:[300,340]},
+};
+
+/* ---------- Level 3: The Field ---------- */
+
+const level3 = {
+  name: 'Level 3 — The Field',
+  tip: 'Stay low in the tall grass to avoid hikers, dogs, and skittish cows on your way to the mountain trail.',
+  theme: 'field',
+  exitLabel: 'UP THE TRAIL',
+  playerStart: {x:468, y:580},
+  obstacles: [
+    ...borderWalls(GATE_X, GATE_W, 'wall', '#2f6e2f'),
+    {x:150, y:300, w:60, h:60, type:'rock'},
+    {x:750, y:280, w:70, h:50, type:'rock'},
+    {x:420, y:420, w:60, h:50, type:'hay'},
+    {x:190, y:20, w:130, h:100, type:'waterfallCliff'},
+    {x:180, y:115, w:45, h:55, type:'water'},
+    {x:285, y:115, w:45, h:55, type:'water'},
+    {x:450, y:250, w:70, h:50, type:'water'},
+  ],
+  bridges: [
+    {x:225, y:115, w:60, h:55},
+  ],
+  bushes: [
+    {x:250, y:230, w:90, h:60, style:'grass'},
+    {x:600, y:350, w:90, h:60, style:'grass'},
+    {x:400, y:480, w:90, h:60, style:'grass'},
+  ],
+  decor: [
+    {x:60,y:70},{x:150,y:70},{x:350,y:70},{x:450,y:70},{x:800,y:70},{x:870,y:70},
+    {x:60,y:590},{x:150,y:590},{x:250,y:590},{x:650,y:590},{x:750,y:590},{x:850,y:590},{x:900,y:590},
+    {x:45,y:130},{x:45,y:220},{x:45,y:310},{x:45,y:400},{x:45,y:490},
+    {x:915,y:130},{x:915,y:220},{x:915,y:310},{x:915,y:400},{x:915,y:490},
+  ],
+  hazardDefs: [
+    { type:'human', mode:'cone', pts:[{x:80,y:200},{x:880,y:200}], speed:80, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', mode:'cone', pts:[{x:880,y:460},{x:80,y:460}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'dog', mode:'radius', pts:[{x:200,y:355},{x:520,y:355}], speed:120, radius:85, fillTime:0.5, w:26, h:16 },
+    { type:'dog', mode:'radius', pts:[{x:700,y:520},{x:700,y:260}], speed:115, radius:85, fillTime:0.5, w:26, h:16 },
+    { type:'cow', mode:'radius', pts:[{x:550,y:150},{x:550,y:280}], speed:35, radius:65, fillTime:1.3, w:34, h:26 },
+    { type:'cow', mode:'radius', pts:[{x:300,y:520},{x:150,y:520}], speed:30, radius:65, fillTime:1.3, w:34, h:26 },
+  ],
+  vehicleDefs: [],
+  exitGate: EXIT,
+};
+
+/* ---------- Level 4: The Mountain ---------- */
+
+const level4 = {
+  name: 'Level 4 — The Mountain',
+  tip: 'Zig-zag up the switchback trail and stay clear of the reindeer watching each pass. Duck behind snowdrifts to stay hidden.',
+  theme: 'mountain',
+  exitLabel: 'SUMMIT!',
+  playerStart: {x:468, y:580},
+  obstacles: [
+    ...borderWalls(GATE_X, GATE_W, 'wall', '#5a5248'),
+    {x:0, y:460, w:620, h:24, type:'wall', color:'#6b6259'},
+    {x:340, y:300, w:620, h:24, type:'wall', color:'#6b6259'},
+    {x:0, y:150, w:620, h:24, type:'wall', color:'#6b6259'},
+  ],
+  bushes: [
+    {x:700, y:495, w:70, h:40, style:'snow'},
+    {x:150, y:335, w:70, h:40, style:'snow'},
+    {x:700, y:185, w:70, h:40, style:'snow'},
+  ],
+  decor: [
+    {x:60,y:600,kind:'pine'},{x:900,y:600,kind:'pine'},{x:60,y:60,kind:'pine'},{x:900,y:60,kind:'pine'},
+    {x:60,y:420,kind:'pine'},{x:900,y:420,kind:'pine'},{x:60,y:250,kind:'pine'},{x:900,y:250,kind:'pine'},
+  ],
+  hazardDefs: [
+    { type:'reindeer', mode:'cone', pts:[{x:630,y:472},{x:930,y:472}], speed:95, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:30,y:312},{x:330,y:312}], speed:90, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:630,y:162},{x:930,y:162}], speed:100, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:900,y:80},{x:400,y:80}], speed:85, visionRange:160, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
+  ],
+  vehicleDefs: [],
+  exitGate: EXIT,
+};
+
+const levels = [level1, level2, level3, level4];
+
+/* ---------- Runtime state ---------- */
+
+let obstacles = [], bushes = [], decor = [], hazards = [], vehicles = [], bridges = [], exitGate = EXIT;
+let currentLevelIndex = 0;
+let currentLevel = level1;
+
+const player = { x:0, y:0, w:28, h:24, speed:190, facing:0, suspicion:0 };
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if ((e.key === 'Enter' || e.key === ' ')) {
+    ensureAudio();
+    if (state === 'credits') { sfxClick(); startGame(); }
+    else if (state === 'levelIntro') { sfxClick(); continueFromIntro(); }
+    else if (state === 'caught') { sfxClick(); retryLevel(); }
+    else if (state === 'gameover') { sfxClick(); startOver(); }
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function collidesAny(rect, list) { return list.some(o => rectsOverlap(rect, o)); }
+function moveWithCollision(entity, dx, dy) {
+  if (dx !== 0) {
+    const test = {x: entity.x + dx, y: entity.y, w: entity.w, h: entity.h};
+    if (!collidesAny(test, obstacles)) entity.x = test.x;
+  }
+  if (dy !== 0) {
+    const test = {x: entity.x, y: entity.y + dy, w: entity.w, h: entity.h};
+    if (!collidesAny(test, obstacles)) entity.y = test.y;
+  }
+}
+function center(e) { return {x: e.x + e.w/2, y: e.y + e.h/2}; }
+function inBush(e) {
+  const c = center(e);
+  return bushes.some(b => c.x > b.x && c.x < b.x+b.w && c.y > b.y && c.y < b.y+b.h);
+}
+function normAngle(a) {
+  while (a > Math.PI) a -= Math.PI*2;
+  while (a < -Math.PI) a += Math.PI*2;
+  return a;
+}
+
+/* ---------- Game state ---------- */
+
+let state = 'credits'; // credits | levelIntro | playing | caught | won
+let elapsed = 0;
+let stepTimer = 0;
+let beepTimer = 0;
+let wasHidden = false;
+let animalNearState = {};
+let waterfallSoundTimer = 0;
+let animTime = 0;
+const MAX_LIVES = 3;
+let lives = MAX_LIVES;
+
+function updateLivesDisplay() {
+  document.getElementById('livesLabel').textContent = '❤️'.repeat(Math.max(lives,0)) + '🖤'.repeat(MAX_LIVES - Math.max(lives,0));
+}
+
+function updateAnimalSounds() {
+  if (currentLevel.theme !== 'zoo') return;
+  const pc = center(player);
+  obstacles.forEach((o, i) => {
+    if (!o.animal) return;
+    const cx = o.x + o.w/2, cy = o.y + o.h/2;
+    const dist = Math.hypot(pc.x - cx, pc.y - cy);
+    const wasNear = animalNearState[i];
+    if (!wasNear && dist < 120) {
+      animalNearState[i] = true;
+      (ANIMAL_SFX[o.animal] || (()=>{}))();
+    } else if (wasNear && dist > 170) {
+      animalNearState[i] = false;
+    }
+  });
+}
+
+function updateWaterfallSound(dt) {
+  if (currentLevel.theme !== 'field') { waterfallSoundTimer = 0; return; }
+  const wf = obstacles.find(o => o.type === 'waterfallCliff');
+  if (!wf) return;
+  const pc = center(player);
+  const cx = wf.x + wf.w/2, cy = wf.y + wf.h/2;
+  const dist = Math.hypot(pc.x - cx, pc.y - cy);
+  if (dist < 260) {
+    waterfallSoundTimer -= dt;
+    if (waterfallSoundTimer <= 0) {
+      sfxWaterfall();
+      waterfallSoundTimer = 2.2;
+    }
+  } else {
+    waterfallSoundTimer = 0;
+  }
+}
+
+function instantiateHazards(defs) {
+  return defs.map(d => ({...d, x:d.pts[0].x, y:d.pts[0].y, idx:0, forward:true, angle:0}));
+}
+function instantiateVehicles(defs) {
+  return defs.map(d => ({...d, x:d.startX}));
+}
+
+function loadLevel(idx) {
+  currentLevelIndex = idx;
+  currentLevel = levels[idx];
+  obstacles = currentLevel.obstacles;
+  bushes = currentLevel.bushes;
+  decor = currentLevel.decor;
+  bridges = currentLevel.bridges || [];
+  exitGate = currentLevel.exitGate;
+  hazards = instantiateHazards(currentLevel.hazardDefs);
+  vehicles = instantiateVehicles(currentLevel.vehicleDefs);
+  player.x = currentLevel.playerStart.x;
+  player.y = currentLevel.playerStart.y;
+  player.suspicion = 0;
+  player.facing = 0;
+  stepTimer = 0;
+  beepTimer = 0;
+  wasHidden = false;
+  animalNearState = {};
+  waterfallSoundTimer = 0;
+  document.getElementById('levelLabel').textContent = currentLevel.name;
+}
+
+function startGame() {
+  document.getElementById('creditsScreen').classList.add('hidden');
+  elapsed = 0;
+  lives = MAX_LIVES;
+  updateLivesDisplay();
+  loadLevel(0);
+  state = 'playing';
+}
+
+function showLevelIntro(idx) {
+  loadLevel(idx);
+  document.getElementById('introTitle').textContent = currentLevel.name;
+  document.getElementById('introTip').textContent = currentLevel.tip;
+  document.getElementById('levelIntroScreen').classList.remove('hidden');
+  state = 'levelIntro';
+}
+
+function continueFromIntro() {
+  document.getElementById('levelIntroScreen').classList.add('hidden');
+  state = 'playing';
+}
+
+function retryLevel() {
+  document.getElementById('caughtScreen').classList.add('hidden');
+  loadLevel(0);
+  state = 'playing';
+}
+
+function triggerCaught(msg) {
+  sfxCaught();
+  lives -= 1;
+  updateLivesDisplay();
+  if (lives <= 0) {
+    state = 'gameover';
+    document.getElementById('gameOverMsg').textContent = msg;
+    document.getElementById('gameOverScreen').classList.remove('hidden');
+  } else {
+    state = 'caught';
+    const livesWord = lives === 1 ? 'life' : 'lives';
+    document.getElementById('caughtMsg').textContent = `${msg} (${lives} ${livesWord} left)`;
+    document.getElementById('caughtScreen').classList.remove('hidden');
+  }
+}
+
+function startOver() {
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  elapsed = 0;
+  lives = MAX_LIVES;
+  updateLivesDisplay();
+  loadLevel(0);
+  state = 'playing';
+}
+
+/* ---------- Update ---------- */
+
+function updatePlayer(dt) {
+  let dx = 0, dy = 0;
+  if (keys['arrowup'] || keys['w']) dy -= 1;
+  if (keys['arrowdown'] || keys['s']) dy += 1;
+  if (keys['arrowleft'] || keys['a']) dx -= 1;
+  if (keys['arrowright'] || keys['d']) dx += 1;
+  if (dx !== 0 || dy !== 0) {
+    const len = Math.hypot(dx, dy);
+    dx = dx/len; dy = dy/len;
+    player.facing = Math.atan2(dy, dx);
+    moveWithCollision(player, dx * player.speed * dt, dy * player.speed * dt);
+    stepTimer -= dt;
+    if (stepTimer <= 0) { sfxStep(); stepTimer = 0.26; }
+  } else {
+    stepTimer = 0;
+  }
+}
+
+function updateHazards(dt) {
+  hazards.forEach(h => {
+    const dest = h.forward ? h.pts[1] : h.pts[0];
+    const ddx = dest.x - h.x, ddy = dest.y - h.y;
+    const dist = Math.hypot(ddx, ddy);
+    if (dist < 4) {
+      h.forward = !h.forward;
+    } else {
+      const nx = ddx/dist, ny = ddy/dist;
+      h.x += nx * h.speed * dt;
+      h.y += ny * h.speed * dt;
+      h.angle = Math.atan2(ny, nx);
+    }
+  });
+}
+
+function updateVehicles(dt) {
+  vehicles.forEach(v => {
+    v.x += v.dir * v.speed * dt;
+    if (v.dir > 0 && v.x > W) v.x = -v.w;
+    if (v.dir < 0 && v.x < -v.w) v.x = W;
+  });
+  const hit = vehicles.some(v => rectsOverlap(player, v));
+  if (hit) triggerCaught('A car nearly ran you over!');
+}
+
+function canDetect(h) {
+  if (inBush(player)) return false;
+  const hc = {x: h.x + h.w/2, y: h.y + h.h/2};
+  const pc = center(player);
+  const dx = pc.x - hc.x, dy = pc.y - hc.y;
+  const dist = Math.hypot(dx, dy);
+  if (h.mode === 'radius') return dist <= h.radius;
+  if (dist > h.visionRange) return false;
+  const angleToPlayer = Math.atan2(dy, dx);
+  const diff = Math.abs(normAngle(angleToPlayer - h.angle));
+  return diff <= h.visionHalfAngle;
+}
+
+const CATCH_MESSAGES = {
+  human: 'Someone spotted you and carried you back!',
+  dog: 'A dog sniffed you out and started barking!',
+  cow: 'A startled cow gave away your position!',
+  reindeer: 'A reindeer spotted you and stamped the alarm!',
+};
+
+function updateSuspicion(dt) {
+  const seen = hazards.filter(canDetect);
+  if (seen.length > 0) {
+    const rate = Math.max(...seen.map(h => 1/h.fillTime));
+    player.suspicion += rate * dt;
+  } else {
+    player.suspicion -= dt / 0.6;
+  }
+  player.suspicion = Math.max(0, Math.min(1, player.suspicion));
+
+  beepTimer -= dt;
+  if (player.suspicion > 0.05 && beepTimer <= 0 && state === 'playing') {
+    sfxBeep(420 + player.suspicion * 500);
+    beepTimer = 0.55 - player.suspicion * 0.42;
+  }
+
+  if (player.suspicion >= 1) {
+    triggerCaught(CATCH_MESSAGES[seen[0].type] || 'You were spotted!');
+  }
+  return seen.length > 0;
+}
+
+function checkWin() {
+  if (rectsOverlap(player, exitGate)) {
+    if (currentLevelIndex < levels.length - 1) {
+      sfxLevelComplete();
+      showLevelIntro(currentLevelIndex + 1);
+    } else {
+      sfxWin();
+      state = 'won';
+      document.getElementById('winTime').textContent = elapsed.toFixed(1);
+      document.getElementById('winScreen').classList.remove('hidden');
+    }
+  }
+}
+
+/* ---------- Draw ---------- */
+
+function drawLion(cx, cy) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = '#c8963c'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(30,10); ctx.quadraticCurveTo(55,20,50,-5); ctx.stroke();
+  ctx.fillStyle = '#8a5a1e';
+  ctx.beginPath(); ctx.arc(50,-5,5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#d9a24a';
+  ctx.beginPath(); ctx.ellipse(0, 10, 34, 18, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c8963c';
+  [-20,-5,10,25].forEach(dx => ctx.fillRect(dx, 22, 6, 12));
+  ctx.fillStyle = '#8a5a1e';
+  for (let a=0; a<Math.PI*2; a+=Math.PI/8) {
+    ctx.beginPath();
+    ctx.ellipse(-28+Math.cos(a)*16, -6+Math.sin(a)*16, 9, 6, a, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#e0b060';
+  ctx.beginPath(); ctx.arc(-28, -6, 14, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c8963c';
+  ctx.beginPath(); ctx.arc(-36,-16,4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-20,-16,4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3a2a15';
+  ctx.beginPath(); ctx.arc(-33,-6,1.6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-24,-6,1.6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-28,-1,2.5,2,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBird(x, y, bodyColor, wingColor) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath(); ctx.ellipse(0,0,10,7,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(9,-4,5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#e8b800';
+  ctx.beginPath(); ctx.moveTo(14,-4); ctx.lineTo(20,-2); ctx.lineTo(14,-1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = wingColor;
+  ctx.beginPath(); ctx.ellipse(-3,1,6,4,0.4,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath(); ctx.moveTo(-9,0); ctx.lineTo(-18,-4); ctx.lineTo(-18,4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(10,-6,1.2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawBirds(o) {
+  ctx.strokeStyle = '#6b4a26'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(o.x+30, o.y+60); ctx.lineTo(o.x+120,o.y+60); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(o.x+110, o.y+110); ctx.lineTo(o.x+200,o.y+110); ctx.stroke();
+  drawBird(o.x+60, o.y+50, '#d94a3a', '#a83020');
+  drawBird(o.x+150, o.y+100, '#3a7fd9', '#2a5aa8');
+  drawBird(o.x+95, o.y+130, '#e8c93a', '#c8a020');
+}
+
+function drawReptile(o) {
+  const cy = o.y + o.h/2 + 6;
+  ctx.strokeStyle = '#4a8f3a';
+  ctx.lineWidth = 14; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(o.x+30, cy);
+  ctx.quadraticCurveTo(o.x+80, cy-24, o.x+130, cy);
+  ctx.quadraticCurveTo(o.x+180, cy+24, o.x+220, cy-6);
+  ctx.stroke();
+  ctx.fillStyle = '#2f6e28';
+  [[o.x+60,cy-10],[o.x+110,cy+6],[o.x+160,cy+10],[o.x+200,cy-8]].forEach(([sx,sy]) => {
+    ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle = '#4a8f3a';
+  ctx.beginPath(); ctx.arc(o.x+222, cy-6, 9, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(o.x+225, cy-9, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#c93a3a'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(o.x+230,cy-6); ctx.lineTo(o.x+238,cy-6);
+  ctx.moveTo(o.x+238,cy-6); ctx.lineTo(o.x+241,cy-9);
+  ctx.moveTo(o.x+238,cy-6); ctx.lineTo(o.x+241,cy-3);
+  ctx.stroke();
+}
+
+function drawEnclosureAnimal(o) {
+  const cx = o.x + o.w/2, cy = o.y + o.h/2 + 10;
+  if (o.animal === 'lion') drawLion(cx, cy);
+  else if (o.animal === 'birds') drawBirds(o);
+  else if (o.animal === 'reptile') drawReptile(o);
+}
+
+function drawWaterfallCliff(o) {
+  ctx.fillStyle = '#8a8578';
+  ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.strokeStyle = '#5f5b4f'; ctx.lineWidth = 3;
+  ctx.strokeRect(o.x, o.y, o.w, o.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(o.x + 14 + i*32, o.y + 6);
+    ctx.lineTo(o.x + 8 + i*30, o.y + o.h - 8);
+    ctx.stroke();
+  }
+  const chanX = o.x + o.w*0.32, chanW = o.w*0.36;
+  ctx.fillStyle = '#bfe4f0';
+  ctx.fillRect(chanX, o.y, chanW, o.h + 20);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  const speed = 140;
+  for (let i = 0; i < 5; i++) {
+    const yOff = (animTime*speed + i*(o.h/5)) % o.h;
+    ctx.fillRect(chanX + 4, o.y + yOff, chanW - 8, 10);
+  }
+}
+
+function drawWater(o) {
+  ctx.fillStyle = '#5fa8c9';
+  ctx.beginPath();
+  ctx.ellipse(o.x + o.w/2, o.y + o.h/2, o.w/2, o.h/2, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = '#3d7a96'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  const shimmerX = o.x + o.w/2 + Math.sin(animTime*1.5 + o.x)*o.w*0.15;
+  ctx.beginPath(); ctx.ellipse(shimmerX, o.y+o.h/2, o.w*0.15, o.h*0.2, 0, 0, Math.PI*2); ctx.fill();
+}
+
+function drawBridge(b) {
+  ctx.fillStyle = '#5fa8c9';
+  ctx.fillRect(b.x-4, b.y, b.w+8, b.h);
+  ctx.fillStyle = '#8a5a2a';
+  ctx.fillRect(b.x, b.y+6, b.w, b.h-12);
+  ctx.strokeStyle = '#5a3a15'; ctx.lineWidth = 2;
+  for (let i=6; i<b.w; i+=10) {
+    ctx.beginPath(); ctx.moveTo(b.x+i, b.y+6); ctx.lineTo(b.x+i, b.y+b.h-6); ctx.stroke();
+  }
+  ctx.strokeRect(b.x, b.y+6, b.w, b.h-12);
+  ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(b.x, b.y+6); ctx.lineTo(b.x+b.w, b.y+6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(b.x, b.y+b.h-6); ctx.lineTo(b.x+b.w, b.y+b.h-6); ctx.stroke();
+}
+
+function drawObstacle(o) {
+  if (o.type === 'waterfallCliff') { drawWaterfallCliff(o); return; }
+  if (o.type === 'water') { drawWater(o); return; }
+  if (o.type === 'rock') {
+    ctx.fillStyle = '#8a8a8a';
+    ctx.beginPath();
+    ctx.ellipse(o.x+o.w/2, o.y+o.h/2, o.w/2, o.h/2, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#5f5f5f'; ctx.lineWidth = 3; ctx.stroke();
+    return;
+  }
+  if (o.type === 'hay') {
+    ctx.fillStyle = '#d9b64a';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.strokeStyle = '#a8863a'; ctx.lineWidth = 2;
+    for (let i=0;i<o.h;i+=8) { ctx.beginPath(); ctx.moveTo(o.x,o.y+i); ctx.lineTo(o.x+o.w,o.y+i); ctx.stroke(); }
+    ctx.strokeRect(o.x,o.y,o.w,o.h);
+    return;
+  }
+  if (o.type === 'wall') {
+    ctx.fillStyle = o.color || '#555';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2;
+    ctx.strokeRect(o.x, o.y, o.w, o.h);
+    return;
+  }
+  // default: fence
+  if (o.animal) {
+    ctx.fillStyle = '#c9a86a';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    drawEnclosureAnimal(o);
+  } else {
+    ctx.fillStyle = '#7a5230';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+  }
+  ctx.strokeStyle = '#4a3018';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < o.w; i += 16) {
+    ctx.beginPath(); ctx.moveTo(o.x+i, o.y); ctx.lineTo(o.x+i, o.y+o.h); ctx.stroke();
+  }
+  ctx.strokeRect(o.x, o.y, o.w, o.h);
+  if (o.label) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(o.x + o.w/2 - 55, o.y + 4, 110, 16);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText(o.label, o.x + o.w/2, o.y + 16);
+  }
+}
+
+function drawTree(t) {
+  ctx.fillStyle = '#5b3a1e';
+  ctx.fillRect(t.x - 4, t.y, 8, 20);
+  ctx.fillStyle = '#2f7a2f';
+  ctx.beginPath(); ctx.arc(t.x, t.y - 6, 20, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3d8f3d';
+  ctx.beginPath(); ctx.arc(t.x - 8, t.y - 14, 14, 0, Math.PI*2); ctx.fill();
+}
+
+function drawPine(t) {
+  ctx.fillStyle = '#5b3a1e';
+  ctx.fillRect(t.x - 3, t.y + 6, 6, 14);
+  ctx.fillStyle = '#2f5f3a';
+  ctx.beginPath(); ctx.moveTo(t.x, t.y-22); ctx.lineTo(t.x+14, t.y+2); ctx.lineTo(t.x-14, t.y+2); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(t.x, t.y-12); ctx.lineTo(t.x+11, t.y+10); ctx.lineTo(t.x-11, t.y+10); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.65)';
+  ctx.beginPath(); ctx.moveTo(t.x, t.y-22); ctx.lineTo(t.x+4, t.y-14); ctx.lineTo(t.x-4, t.y-14); ctx.closePath(); ctx.fill();
+}
+
+function drawDecorItem(t) {
+  if (t.kind === 'pine') drawPine(t); else drawTree(t);
+}
+
+function drawBush(b) {
+  if (b.style === 'car') {
+    ctx.fillStyle = '#b23a3a';
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = '#88c0e0';
+    ctx.fillRect(b.x+8, b.y+4, b.w-16, b.h/2-2);
+    ctx.strokeStyle = '#5a1c1c'; ctx.lineWidth = 2; ctx.strokeRect(b.x,b.y,b.w,b.h);
+    return;
+  }
+  if (b.style === 'grass') {
+    ctx.fillStyle = 'rgba(120,150,40,0.85)';
+    ctx.beginPath(); ctx.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(80,100,20,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+    return;
+  }
+  if (b.style === 'snow') {
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.beginPath(); ctx.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(190,205,215,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+    return;
+  }
+  ctx.fillStyle = 'rgba(20,70,20,0.9)';
+  ctx.beginPath(); ctx.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(10,40,10,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+}
+
+function drawVisionShape(h, seeing) {
+  ctx.save();
+  ctx.fillStyle = seeing ? 'rgba(220,40,40,0.32)' : 'rgba(255,220,60,0.28)';
+  if (h.mode === 'radius') {
+    ctx.beginPath();
+    ctx.arc(h.x + h.w/2, h.y + h.h/2, h.radius, 0, Math.PI*2);
+    ctx.fill();
+  } else {
+    ctx.translate(h.x + h.w/2, h.y + h.h/2);
+    ctx.rotate(h.angle);
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.arc(0, 0, h.visionRange, -h.visionHalfAngle, h.visionHalfAngle);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawHazardBody(h) {
+  if (h.type === 'human') {
+    ctx.fillStyle = '#2255aa';
+    ctx.fillRect(h.x, h.y + 10, h.w, h.h - 14);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(h.x + 3, h.y + h.h - 6, 6, 6);
+    ctx.fillRect(h.x + h.w - 9, h.y + h.h - 6, 6, 6);
+    ctx.fillStyle = '#e8b98a';
+    ctx.beginPath(); ctx.arc(h.x + h.w/2, h.y + 6, 8, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#553311';
+    ctx.fillRect(h.x + 2, h.y - 1, h.w - 4, 5);
+    return;
+  }
+  if (h.type === 'dog') {
+    ctx.save();
+    ctx.translate(h.x + h.w/2, h.y + h.h/2);
+    ctx.rotate(h.angle);
+    ctx.fillStyle = '#8a5a2a';
+    ctx.beginPath(); ctx.ellipse(0, 0, h.w/2, h.h/2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(h.w/2-4,-6); ctx.lineTo(h.w/2+8,0); ctx.lineTo(h.w/2-4,6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5a3a1a';
+    ctx.beginPath(); ctx.moveTo(-h.w/2,-h.h/2); ctx.lineTo(-h.w/2-6,-h.h/2-6); ctx.lineTo(-h.w/2+4,-h.h/2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (h.type === 'cow') {
+    ctx.save();
+    ctx.translate(h.x + h.w/2, h.y + h.h/2);
+    ctx.rotate(h.angle);
+    ctx.fillStyle = '#f5f5f5';
+    ctx.beginPath(); ctx.ellipse(0, 0, h.w/2, h.h/2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#2a2a2a';
+    ctx.beginPath(); ctx.ellipse(-h.w/4, -2, 7, 6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(h.w/5, 4, 6, 5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#f5f5f5';
+    ctx.beginPath(); ctx.arc(h.w/2, 0, 6, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (h.type === 'reindeer') {
+    ctx.save();
+    ctx.translate(h.x + h.w/2, h.y + h.h/2);
+    ctx.rotate(h.angle);
+    ctx.fillStyle = '#8a6248';
+    ctx.beginPath(); ctx.ellipse(0, 2, h.w/2, h.h/2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6b4a34';
+    ctx.beginPath(); ctx.arc(h.w/2 - 2, -h.h/2 + 1, 6, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#5a3f2a'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(h.w/2-2, -h.h/2-2); ctx.lineTo(h.w/2+4, -h.h/2-10);
+    ctx.moveTo(h.w/2, -h.h/2-6); ctx.lineTo(h.w/2+6, -h.h/2-6);
+    ctx.moveTo(h.w/2-5, -h.h/2-2); ctx.lineTo(h.w/2-9, -h.h/2-10);
+    ctx.moveTo(h.w/2-6, -h.h/2-6); ctx.lineTo(h.w/2-10, -h.h/2-6);
+    ctx.stroke();
+    ctx.fillStyle = '#c93a3a';
+    ctx.beginPath(); ctx.arc(h.w/2+4, -h.h/2+1, 2, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+    return;
+  }
+}
+
+function drawHazard(h) {
+  const seeing = canDetect(h);
+  drawVisionShape(h, seeing);
+  drawHazardBody(h);
+}
+
+function drawVehicle(v) {
+  ctx.fillStyle = '#c94a3a';
+  ctx.fillRect(v.x, v.y, v.w, v.h);
+  ctx.fillStyle = '#9ed6f0';
+  const winW = v.w*0.35;
+  ctx.fillRect(v.x + (v.dir>0? v.w-winW-6 : 6), v.y+5, winW, v.h-10);
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(v.x+10, v.y+v.h, 6, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(v.x+v.w-10, v.y+v.h, 6, 0, Math.PI*2); ctx.fill();
+}
+
+function drawCapybara(p) {
+  ctx.save();
+  ctx.translate(p.x + p.w/2, p.y + p.h/2);
+  const hidden = inBush(p);
+  ctx.globalAlpha = hidden ? 0.55 : 1;
+  ctx.rotate(p.facing);
+  ctx.fillStyle = '#8a6a3f';
+  ctx.beginPath(); ctx.ellipse(0, 0, p.w/2, p.h/2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#6f5230';
+  ctx.beginPath(); ctx.ellipse(p.w/2 - 3, -p.h/2 + 3, 5, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2a2015';
+  ctx.beginPath(); ctx.arc(p.w/2 - 2, -2, 2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#3a2a18';
+  ctx.beginPath(); ctx.ellipse(p.w/2 + 1, 3, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawGroundZoo() {
+  ctx.fillStyle = '#4c9a4c'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#4a8f4a';
+  for (let i=0;i<W;i+=40) for (let j=0;j<H;j+=40) if ((i+j)%80===0) ctx.fillRect(i,j,40,40);
+}
+
+function drawGroundField() {
+  ctx.fillStyle = '#6bb552'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#66ab4d';
+  for (let i=0;i<W;i+=40) for (let j=0;j<H;j+=40) if ((i+j)%80===0) ctx.fillRect(i,j,40,40);
+}
+
+function drawGroundRoad() {
+  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0,0,W,H);
+  const b = currentLevel.roadBands;
+  ctx.fillStyle = '#999';
+  ctx.fillRect(0, b.sidewalkTop[0], W, b.sidewalkTop[1]-b.sidewalkTop[0]);
+  ctx.fillRect(0, b.sidewalkBottom[0], W, b.sidewalkBottom[1]-b.sidewalkBottom[0]);
+  ctx.fillStyle = '#5a9a4c';
+  ctx.fillRect(0, b.median[0], W, b.median[1]-b.median[0]);
+  ctx.strokeStyle = 'rgba(255,220,60,0.7)';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([18,14]);
+  [265, 340].forEach(y => { // approx lane boundaries excluding median edges
+    ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke();
+  });
+  [195].forEach(y => { ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke(); });
+  [445].forEach(y => { ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke(); });
+  ctx.setLineDash([]);
+}
+
+const GATE_STYLES = {
+  zoo: {fill:'#e8c34a', stroke:'#a8842a', text:'#3a2a05'},
+  road: {fill:'#e8c34a', stroke:'#a8842a', text:'#3a2a05'},
+  field: {fill:'#7a5230', stroke:'#4a3018', text:'#fff'},
+  mountain: {fill:'#dfeffa', stroke:'#7a9ab0', text:'#1a2f3a'},
+};
+
+function drawExitGate() {
+  const style = GATE_STYLES[currentLevel.theme] || GATE_STYLES.zoo;
+  ctx.fillStyle = style.fill;
+  ctx.fillRect(exitGate.x, 0, exitGate.w, 40);
+  ctx.strokeStyle = style.stroke; ctx.lineWidth = 4;
+  ctx.strokeRect(exitGate.x, 0, exitGate.w, 40);
+  ctx.fillStyle = style.text;
+  ctx.font = 'bold 16px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText(currentLevel.exitLabel, exitGate.x + exitGate.w/2, 26);
+}
+
+function drawGroundMountain() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#e8f0f5');
+  grad.addColorStop(0.4, '#c9d6d9');
+  grad.addColorStop(0.75, '#a89a82');
+  grad.addColorStop(1, '#7a6a52');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  for (let i=0;i<W;i+=40) for (let j=0;j<H;j+=40) if ((i+j)%80===0) ctx.fillRect(i,j,40,40);
+}
+
+function draw(seenNow) {
+  ctx.clearRect(0, 0, W, H);
+  if (currentLevel.theme === 'road') drawGroundRoad();
+  else if (currentLevel.theme === 'field') drawGroundField();
+  else if (currentLevel.theme === 'mountain') drawGroundMountain();
+  else drawGroundZoo();
+
+  drawExitGate();
+  obstacles.forEach(drawObstacle);
+  bridges.forEach(drawBridge);
+  bushes.forEach(drawBush);
+  decor.forEach(drawDecorItem);
+  vehicles.forEach(drawVehicle);
+  hazards.forEach(drawHazard);
+  drawCapybara(player);
+
+  document.getElementById('suspicionFill').style.width = (player.suspicion*100).toFixed(0) + '%';
+  document.getElementById('suspicionFill').style.background = seenNow ? '#e23e3e' : (player.suspicion > 0.5 ? '#ff8a33' : '#ffcc33');
+  document.getElementById('timeVal').textContent = elapsed.toFixed(1);
+}
+
+/* ---------- Main loop ---------- */
+
+let last = performance.now();
+function loop(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  dt = Math.min(dt, 0.05);
+  animTime += dt;
+
+  let seenNow = false;
+  if (state === 'playing') {
+    elapsed += dt;
+    updatePlayer(dt);
+    updateHazards(dt);
+    updateVehicles(dt);
+    const hiddenNow = inBush(player);
+    if (hiddenNow && !wasHidden) sfxHide();
+    wasHidden = hiddenNow;
+    updateAnimalSounds();
+    updateWaterfallSound(dt);
+    if (state === 'playing') seenNow = updateSuspicion(dt);
+    if (state === 'playing') checkWin();
+  }
+  draw(seenNow);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ---------- UI wiring ---------- */
+
+document.getElementById('startBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); startGame(); });
+document.getElementById('introContinueBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); continueFromIntro(); });
+document.getElementById('retryBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); retryLevel(); });
+document.getElementById('startOverBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); startOver(); });
+document.getElementById('playAgainBtn').addEventListener('click', () => {
+  ensureAudio(); sfxClick();
+  document.getElementById('winScreen').classList.add('hidden');
+  document.getElementById('creditsScreen').classList.remove('hidden');
+  state = 'credits';
+});
+document.getElementById('muteBtn').addEventListener('click', () => { ensureAudio(); setMuted(!muted); });
+document.getElementById('muteBtn').textContent = muted ? '🔇' : '🔊';
+updateLivesDisplay();
+
+loadLevel(0); // initial render behind the credits screen
+</script>
+</body>
+</html>
