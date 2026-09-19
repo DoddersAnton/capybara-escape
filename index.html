@@ -33,6 +33,16 @@
   #suspicionFill {
     height: 100%; width: 0%; background: #ffcc33; transition: width 0.08s linear, background 0.15s;
   }
+  #guardRow { margin-top: 2px; font-size: 12px; }
+  #guardBar {
+    width: 110px; height: 8px; background: rgba(0,0,0,0.4);
+    border: 2px solid #fff; border-radius: 5px; overflow: hidden;
+  }
+  #guardFill { height: 100%; width: 100%; background: #4fd1ff; }
+  #hpRow { margin-top: 4px; font-size: 12px; }
+  #hpPips { display: flex; gap: 3px; }
+  #hpPips .pip { width: 14px; height: 10px; background: #e23e3e; border: 1px solid #fff; border-radius: 2px; }
+  #hpPips .pip.off { background: rgba(0,0,0,0.45); }
   .overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
@@ -49,6 +59,26 @@
     color: #3a2a05;
   }
   .overlay button:hover { background: #ffd966; }
+  .overlay button.secondary {
+    background: transparent; color: #ffe28a; border: 2px solid #ffe28a;
+  }
+  .overlay button.secondary:hover { background: rgba(255,226,138,0.15); }
+  #introStars { font-size: 15px; color: #ffe28a; letter-spacing: 3px; }
+  #introStars b { color: #dcd; font-weight: 600; letter-spacing: 1px; margin-right: 6px; }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  #scoreEntry { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  #scoreEntry label { font-size: 15px; color: #ffe28a; font-weight: 600; }
+  #nameInput {
+    padding: 8px 10px; font-size: 16px; border-radius: 8px; border: 2px solid #ffe28a;
+    background: rgba(255,255,255,0.95); color: #2a1f05; width: 150px;
+  }
+  #scoreEntry button { margin-top: 0; }
+  .lb { border-collapse: collapse; font-size: 14px; min-width: 340px; }
+  .lb th { color: #ffe28a; font-weight: 600; text-align: left; padding: 3px 12px; border-bottom: 1px solid rgba(255,226,138,0.5); }
+  .lb td { padding: 3px 12px; color: #f2f2e6; text-align: left; }
+  .lb tr.me td { background: rgba(255,204,51,0.25); color: #fff; font-weight: 700; }
+  .lb td.num, .lb th.num { text-align: right; }
+  #winRank { color: #ffe28a; font-weight: 600; }
   .hidden { display: none !important; }
   #timerLabel { text-align: right; }
   #muteBtn {
@@ -67,6 +97,12 @@
       <div>Suspicion</div>
       <div id="suspicionBar"><div id="suspicionFill"></div></div>
       <div id="livesLabel">❤️❤️❤️</div>
+      <div id="guardRow">Guard (B)</div>
+      <div id="guardBar"><div id="guardFill"></div></div>
+      <div id="hpWrap" class="hidden">
+        <div id="hpRow">Health</div>
+        <div id="hpPips"></div>
+      </div>
     </div>
     <div id="levelLabel">Level 1 — The Zoo</div>
     <div id="timerLabel">
@@ -78,17 +114,34 @@
   <div id="creditsScreen" class="overlay">
     <h1>🐹 Ezra's Capybara Escape Game</h1>
     <div class="credit-line">Please play to start</div>
-    <p>Guide the capybara through four levels: sneak out of the <b>zoo</b>,
-    dash across a busy <b>road</b>, cross a quiet <b>field</b>, and climb a
-    snowy <b>mountain</b> to freedom. Move with <b>WASD</b> or <b>Arrow Keys</b>.
+    <p>Guide the capybara through five levels: sneak out of the <b>zoo</b>,
+    dash across a busy <b>road</b>, cross a quiet <b>field</b>, climb a
+    snowy <b>mountain</b>, then duel <b>Darth Vader</b> for the escape pod.
+    Move with <b>WASD</b> or <b>Arrow Keys</b>.
     Duck into bushes, parked cars, tall grass or snowdrifts to hide — they
-    block a watcher's line of sight. You have <b>3 lives</b> — get caught
-    three times and it's back to the start!</p>
-    <button id="startBtn">Start Escape</button>
+    block a watcher's line of sight. Press <b>Space</b> to swing your
+    <b>lightsaber</b> — it does 1 damage to people (6 health) and 2 damage to
+    cars (10 health), so you can smash your way through traffic. Hold <b>B</b>
+    to <b>block</b>: your saber bounces cars and Vader's blows, but it
+    slows you down and drains your Guard bar. Vader hits for 1 damage and
+    you have 7 health.
+    You have <b>3 lives</b> — get caught three times and it's back to the start!</p>
+    <div class="btn-row">
+      <button id="startBtn">Start Escape</button>
+      <button id="leaderboardBtn" class="secondary">🏆 Leaderboard</button>
+    </div>
+  </div>
+
+  <div id="leaderboardScreen" class="overlay hidden">
+    <h1>🏆 Leaderboard</h1>
+    <p>Fastest escapes through all five levels.</p>
+    <div id="leaderboardBoard"></div>
+    <button id="leaderboardBackBtn">Back</button>
   </div>
 
   <div id="levelIntroScreen" class="overlay hidden">
     <h2 id="introTitle">Level 2 — The Road</h2>
+    <div id="introStars"></div>
     <p id="introTip"></p>
     <button id="introContinueBtn">Continue</button>
   </div>
@@ -108,9 +161,17 @@
 
   <div id="winScreen" class="overlay hidden">
     <h1>🎉 Freedom!</h1>
-    <p>You scaled the mountain and reached the summit, far from the zoo, the
-    road, the field, and every last person — and reindeer — chasing you.
+    <p>You defeated Darth Vader and blasted off in the escape pod, far from the
+    zoo, the road, the field, the mountain, and every last person, reindeer
+    and Sith Lord chasing you.
     Total time: <span id="winTime">0</span> seconds.</p>
+    <div id="scoreEntry">
+      <label for="nameInput">Your name</label>
+      <input id="nameInput" maxlength="12" autocomplete="off" placeholder="Capybara">
+      <button id="saveScoreBtn">Save Score</button>
+    </div>
+    <div id="winRank" class="hidden"></div>
+    <div id="winBoard"></div>
     <button id="playAgainBtn">Play Again</button>
   </div>
 </div>
@@ -188,6 +249,61 @@ function sfxWin() {
 }
 function sfxBeep(freq) { tone(freq, 0.08, {type:'square', vol:0.18}); }
 
+function sfxSaberSwing() {
+  tone(170, 0.22, {type:'sawtooth', vol:0.13, sweepTo:460});
+  tone(85, 0.22, {type:'square', vol:0.05, sweepTo:230});
+}
+function sfxSaberHit() {
+  tone(880, 0.09, {type:'square', vol:0.16, sweepTo:260});
+  noiseBurst(0.09, 0.1);
+}
+function sfxCarHit() {
+  tone(1250, 0.07, {type:'square', vol:0.15, sweepTo:700});
+  tone(180, 0.12, {type:'triangle', vol:0.16, sweepTo:90});
+  noiseBurst(0.08, 0.14);
+}
+function sfxBlock() {
+  tone(1800, 0.06, {type:'square', vol:0.14, sweepTo:900});
+  tone(520, 0.16, {type:'triangle', vol:0.18, sweepTo:240});
+  noiseBurst(0.07, 0.1);
+}
+function sfxVaderIgnite() {
+  tone(90, 0.45, {type:'sawtooth', vol:0.16, sweepTo:420});
+  tone(45, 0.45, {type:'square', vol:0.08, sweepTo:210});
+}
+function sfxVaderWindup() { tone(100, 0.5, {type:'sawtooth', vol:0.1, sweepTo:170}); }
+function sfxVaderSwing() {
+  tone(140, 0.24, {type:'sawtooth', vol:0.17, sweepTo:330});
+  tone(70, 0.24, {type:'square', vol:0.08, sweepTo:170});
+}
+function sfxVaderBreath() {                    // that unmistakable rasp: a breath in, then out
+  noiseBurst(0.5, 0.05);
+  noiseBurst(0.6, 0.06, 0.75);
+}
+function sfxVaderRage() { tone(70, 0.6, {type:'sawtooth', vol:0.2, sweepTo:38}); }
+function sfxVaderDefeat() {
+  tone(300, 1.0, {type:'sawtooth', vol:0.2, sweepTo:35});
+  noiseBurst(0.5, 0.15);
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, {type:'sine', vol:0.22, delay:1.0 + i*0.13}));
+}
+function sfxPlayerHurt() {
+  tone(520, 0.2, {type:'square', vol:0.18, sweepTo:120});
+  noiseBurst(0.1, 0.12);
+}
+function sfxGuardBreak() {
+  tone(280, 0.35, {type:'sawtooth', vol:0.16, sweepTo:55});
+  noiseBurst(0.12, 0.1);
+}
+function sfxCarBreak() {
+  noiseBurst(0.5, 0.3);
+  tone(220, 0.5, {type:'sawtooth', vol:0.2, sweepTo:45});
+  tone(90, 0.45, {type:'square', vol:0.12, sweepTo:35});
+}
+function sfxDefeat() {
+  tone(320, 0.4, {type:'sawtooth', vol:0.16, sweepTo:70});
+  noiseBurst(0.15, 0.1);
+}
+
 function sfxLionRoar() {
   tone(180, 0.5, {type:'sawtooth', vol:0.25, sweepTo:70});
   tone(140, 0.6, {type:'sawtooth', vol:0.18, delay:0.08, sweepTo:60});
@@ -255,6 +371,7 @@ const level1 = {
   name: 'Level 1 — The Zoo',
   tip: 'Sneak past the zookeepers and slip through the gate. Duck into bushes to break their line of sight.',
   theme: 'zoo',
+  difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
   exitLabel: 'ZOO EXIT',
   playerStart: {x:468, y:550},
   obstacles: [...borderWalls(GATE_X, GATE_W, 'fence'), ...penWalls, ...zooEnclosures],
@@ -268,10 +385,10 @@ const level1 = {
     {x:300,y:60},{x:660,y:60},{x:60,y:340},{x:900,y:340},
   ],
   hazardDefs: [
-    { type:'human', mode:'cone', pts:[{x:40,y:470},{x:340,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', mode:'cone', pts:[{x:600,y:470},{x:920,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', mode:'cone', pts:[{x:40,y:250},{x:920,y:250}], speed:85, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', mode:'cone', pts:[{x:800,y:270},{x:800,y:60}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'zookeeper', mode:'cone', pts:[{x:40,y:470},{x:340,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'zookeeper', mode:'cone', pts:[{x:600,y:470},{x:920,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'zookeeper', mode:'cone', pts:[{x:40,y:250},{x:920,y:250}], speed:85, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'zookeeper', mode:'cone', pts:[{x:800,y:270},{x:800,y:60}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
   ],
   vehicleDefs: [],
   exitGate: EXIT,
@@ -281,8 +398,9 @@ const level1 = {
 
 const level2 = {
   name: 'Level 2 — The Road',
-  tip: "Time your dash between cars and past the pedestrians. There's a grassy median halfway across to catch your breath.",
+  tip: "The cars are faster now, and someone patrols the grassy median, so it isn't a safe rest any more. Use the hedge to hide and time your dashes, or smash the cars with your lightsaber (10 health, 2 damage a hit). Hold B to block a car head-on.",
   theme: 'road',
+  difficulty: { speed: 1.1, vision: 1.05, fill: 0.9, decay: 0.7 },
   exitLabel: 'CROSS HERE',
   playerStart: {x:468, y:565},
   obstacles: [...borderWalls(GATE_X, GATE_W, 'wall', '#555')],
@@ -297,6 +415,8 @@ const level2 = {
     { type:'human', mode:'cone', pts:[{x:60,y:540},{x:430,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
     { type:'human', mode:'cone', pts:[{x:530,y:540},{x:900,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
     { type:'human', mode:'cone', pts:[{x:60,y:100},{x:920,y:100}], speed:95, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    // patrols the right half of the grassy median, so it's no longer a safe place to rest
+    { type:'human', mode:'cone', pts:[{x:560,y:303},{x:900,y:303}], speed:80, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
   ],
   vehicleDefs: makeLaneCars([
     {y:195, dir:1, speed:140, offset:0},
@@ -312,8 +432,9 @@ const level2 = {
 
 const level3 = {
   name: 'Level 3 — The Field',
-  tip: 'Stay low in the tall grass to avoid hikers, dogs, and skittish cows on your way to the mountain trail.',
+  tip: 'Stay low in the tall grass to avoid hikers, dogs, and skittish cows. A dog now guards the trail entrance, so pick your moment.',
   theme: 'field',
+  difficulty: { speed: 1.1, vision: 1, fill: 1, decay: 0.75 },
   exitLabel: 'UP THE TRAIL',
   playerStart: {x:468, y:580},
   obstacles: [
@@ -347,6 +468,8 @@ const level3 = {
     { type:'dog', mode:'radius', pts:[{x:700,y:520},{x:700,y:260}], speed:115, radius:85, fillTime:0.5, w:26, h:16 },
     { type:'cow', mode:'radius', pts:[{x:550,y:150},{x:550,y:280}], speed:35, radius:65, fillTime:1.3, w:34, h:26 },
     { type:'cow', mode:'radius', pts:[{x:300,y:520},{x:150,y:520}], speed:30, radius:65, fillTime:1.3, w:34, h:26 },
+    // a dog guarding the approach to the trail entrance
+    { type:'dog', mode:'radius', pts:[{x:820,y:110},{x:600,y:110}], speed:110, radius:85, fillTime:0.5, w:26, h:16 },
   ],
   vehicleDefs: [],
   exitGate: EXIT,
@@ -356,8 +479,9 @@ const level3 = {
 
 const level4 = {
   name: 'Level 4 — The Mountain',
-  tip: 'Zig-zag up the switchback trail and stay clear of the reindeer watching each pass. Duck behind snowdrifts to stay hidden.',
+  tip: 'The last of the wild. The reindeer are faster, sharper-eyed and quicker to raise the alarm, and more of them roam the slopes. Duck behind snowdrifts and zig-zag up.',
   theme: 'mountain',
+  difficulty: { speed: 1.35, vision: 1.25, fill: 0.7, decay: 1.1 },
   exitLabel: 'SUMMIT!',
   playerStart: {x:468, y:580},
   obstacles: [
@@ -370,22 +494,54 @@ const level4 = {
     {x:700, y:495, w:70, h:40, style:'snow'},
     {x:150, y:335, w:70, h:40, style:'snow'},
     {x:700, y:185, w:70, h:40, style:'snow'},
+    {x:700, y:395, w:70, h:40, style:'snow'},
+    {x:300, y:240, w:70, h:40, style:'snow'},
   ],
   decor: [
     {x:60,y:600,kind:'pine'},{x:900,y:600,kind:'pine'},{x:60,y:60,kind:'pine'},{x:900,y:60,kind:'pine'},
     {x:60,y:420,kind:'pine'},{x:900,y:420,kind:'pine'},{x:60,y:250,kind:'pine'},{x:900,y:250,kind:'pine'},
   ],
   hazardDefs: [
-    { type:'reindeer', mode:'cone', pts:[{x:630,y:472},{x:930,y:472}], speed:95, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:30,y:312},{x:330,y:312}], speed:90, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:630,y:162},{x:930,y:162}], speed:100, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:900,y:80},{x:400,y:80}], speed:85, visionRange:160, visionHalfAngle:35*DEG, fillTime:0.8, w:30, h:20 },
+    // wide-set eyes: reindeer see in a broader cone (42°) than people do
+    { type:'reindeer', mode:'cone', pts:[{x:630,y:472},{x:930,y:472}], speed:95, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:30,y:312},{x:330,y:312}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:630,y:162},{x:930,y:162}], speed:100, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:900,y:80},{x:400,y:80}], speed:85, visionRange:160, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    // two more patrol the open slopes between the passes (each has a snowdrift to hide in)
+    { type:'reindeer', mode:'cone', pts:[{x:360,y:392},{x:600,y:392}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:600,y:237},{x:360,y:237}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
   ],
   vehicleDefs: [],
   exitGate: EXIT,
 };
 
-const levels = [level1, level2, level3, level4];
+/* ---------- Level 5: Vader's Lair ---------- */
+
+// A duel instead of a stealth level: the exit stays sealed behind an energy barrier until Darth Vader is defeated.
+const level5 = {
+  name: "Level 5 — Vader's Lair",
+  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Defeat him to unseal the exit.",
+  theme: 'vader',
+  difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
+  exitLabel: 'ESCAPE POD',
+  playerStart: {x:468, y:570},
+  obstacles: [
+    ...borderWalls(GATE_X, GATE_W, 'wall', '#23232b'),
+    {x:230, y:240, w:56, h:56, type:'pillar'},
+    {x:674, y:240, w:56, h:56, type:'pillar'},
+    {x:230, y:400, w:56, h:56, type:'pillar'},
+    {x:674, y:400, w:56, h:56, type:'pillar'},
+    {x:GATE_X, y:0, w:GATE_W, h:20, type:'barrier', barrier:true},   // seals the gate until Vader falls
+  ],
+  bushes: [],
+  decor: [],
+  hazardDefs: [],
+  vehicleDefs: [],
+  exitGate: EXIT,
+  boss: { name:'DARTH VADER', x:449, y:200, w:30, h:46, hp:24, wake:1.4 },
+};
+
+const levels = [level1, level2, level3, level4, level5];
 
 /* ---------- Runtime state ---------- */
 
@@ -393,17 +549,30 @@ let obstacles = [], bushes = [], decor = [], hazards = [], vehicles = [], bridge
 let currentLevelIndex = 0;
 let currentLevel = level1;
 
-const player = { x:0, y:0, w:28, h:24, speed:190, facing:0, suspicion:0 };
+const player = { x:0, y:0, w:28, h:24, speed:190, facing:0, suspicion:0, moving:false, swingT:-1, cooldown:0,
+                 blocking:false, guard:100, guardDelay:0, guardBroken:0,
+                 hp:7, iframes:0, hitFlash:0 };
 
 const keys = {};
 window.addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
+  const t = e.target;
+  // Space swings the lightsaber while playing, so it must not scroll the page or press a focused button.
+  if (state === 'playing' && e.key === ' ') {
+    e.preventDefault();
+    if (t && t !== document.body && t.blur) t.blur();
+  }
+  // Typing in the name box, or pressing Enter/Space on a focused overlay button, is handled by that control itself.
+  if (t && (t.tagName === 'INPUT' || (t.tagName === 'BUTTON' && t.closest('.overlay')))) return;
   if ((e.key === 'Enter' || e.key === ' ')) {
+    const wasPlaying = state === 'playing';
     ensureAudio();
-    if (state === 'credits') { sfxClick(); startGame(); }
+    if (state === 'leaderboard') { sfxClick(); hideLeaderboard(); }
+    else if (state === 'credits') { sfxClick(); startGame(); }
     else if (state === 'levelIntro') { sfxClick(); continueFromIntro(); }
     else if (state === 'caught') { sfxClick(); retryLevel(); }
     else if (state === 'gameover') { sfxClick(); startOver(); }
+    if (!wasPlaying) keys[' '] = false;   // the Space that just closed a screen shouldn't also swing
   }
 });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
@@ -435,7 +604,7 @@ function normAngle(a) {
 
 /* ---------- Game state ---------- */
 
-let state = 'credits'; // credits | levelIntro | playing | caught | won
+let state = 'credits'; // credits | leaderboard | levelIntro | playing | caught | gameover | won
 let elapsed = 0;
 let stepTimer = 0;
 let beepTimer = 0;
@@ -485,11 +654,58 @@ function updateWaterfallSound(dt) {
   }
 }
 
-function instantiateHazards(defs) {
-  return defs.map(d => ({...d, x:d.pts[0].x, y:d.pts[0].y, idx:0, forward:true, angle:0}));
+// Each level's `difficulty` scales its hazards: speed and sight range/radius are multipliers,
+// `fill` scales how long it takes to be spotted (lower = caught faster), and `decay` is how many
+// seconds it takes suspicion to drain from full to empty (higher = they stay suspicious longer).
+const HUMAN_HP = 6;                     // people can be defeated with the lightsaber; animals can't
+const SABER_REACH = 54;                 // px from the capybara's centre to the person's centre
+const SABER_ARC = 75 * DEG;             // each side of the direction the capybara is facing
+const SABER_COOLDOWN = 0.3;             // seconds between swings (hold Space to keep swinging)
+const SWING_TIME = 0.22;                // how long the swing animation lasts
+const DEFEAT_FADE = 0.7;                // how long a defeated person takes to fade away
+const CAR_HP = 10;                      // moving cars can be smashed too...
+const SABER_CAR_DAMAGE = 2;             // ...but each hit only does 2 damage to them
+const CAR_REACH = 42;                   // px from the capybara's centre to the nearest edge of the car
+// Blocking (hold B): the saber deflects cars that hit you head-on. It drains a Guard bar, and slows you down.
+const GUARD_MAX = 100;
+const BLOCK_DRAIN = 12;                 // guard lost per second while holding B
+const BLOCK_HIT_COST = 30;              // guard lost each time a car is deflected
+const GUARD_REGEN = 25;                 // guard regained per second while not blocking...
+const GUARD_REGEN_DELAY = 0.6;          // ...starting this long after you stop
+const GUARD_BREAK_TIME = 1.5;           // can't block for this long once the guard runs out
+const BLOCK_SPEED = 0.6;                // movement speed multiplier while blocking
+const BLOCK_ARC = 80 * DEG;             // a car must be within this angle of the way you're facing
+const BLOCK_CAR_DAMAGE = 2;             // a deflected car takes this much damage
+const CAR_KNOCKBACK = 90;               // px the deflected car is bounced back
+const CAR_STUN = 0.7;                   // seconds the deflected car crawls afterwards
+// Darth Vader (Level 5). He holds his ground and never follows you. Come within his reach and he raises his red
+// saber (a warning arc shows where it will land), then strikes for 1 damage. Step out of the arc, or block,
+// and he's left wide open.
+const PLAYER_MAX_HP = 7;
+const PLAYER_IFRAMES = 0.9;             // brief invulnerability after taking a hit
+const VADER_REACH = 66;                 // he swings at anything this close (centre to centre), and it lands if you're still this close
+const VADER_ARC = 70 * DEG;
+const VADER_WINDUP = 0.55;              // the warning
+const VADER_STRIKE = 0.22;
+const VADER_RECOVER = 0.7;              // when he's open to counter-attacks
+const VADER_DAMAGE = 1;
+const VADER_BLOCK_COST = 25;            // guard lost when you block one of his swings
+let boss = null, bossDefeated = false, bossHintCd = 0;
+let floaters = [];                      // little "-1" / "-2" damage numbers
+let debris = [];                        // sparks, shards and smoke from damaged cars
+
+function instantiateHazards(defs, diff) {
+  return defs.map(d => ({
+    ...d,
+    ...(d.type === 'human' ? { hp: HUMAN_HP, maxHp: HUMAN_HP, dead: false, deadT: 0, hitFlash: 0 } : {}),
+    speed: d.speed * diff.speed,
+    fillTime: d.fillTime * diff.fill,
+    ...(d.mode === 'radius' ? { radius: d.radius * diff.vision } : { visionRange: d.visionRange * diff.vision }),
+    x:d.pts[0].x, y:d.pts[0].y, idx:0, forward:true, angle:0,
+  }));
 }
-function instantiateVehicles(defs) {
-  return defs.map(d => ({...d, x:d.startX}));
+function instantiateVehicles(defs, diff) {
+  return defs.map(d => ({...d, speed: d.speed * diff.speed, x:d.startX, hp: CAR_HP, maxHp: CAR_HP, dead: false, hitFlash: 0, stun: 0}));
 }
 
 function loadLevel(idx) {
@@ -500,12 +716,26 @@ function loadLevel(idx) {
   decor = currentLevel.decor;
   bridges = currentLevel.bridges || [];
   exitGate = currentLevel.exitGate;
-  hazards = instantiateHazards(currentLevel.hazardDefs);
-  vehicles = instantiateVehicles(currentLevel.vehicleDefs);
+  hazards = instantiateHazards(currentLevel.hazardDefs, currentLevel.difficulty);
+  vehicles = instantiateVehicles(currentLevel.vehicleDefs, currentLevel.difficulty);
   player.x = currentLevel.playerStart.x;
   player.y = currentLevel.playerStart.y;
   player.suspicion = 0;
   player.facing = 0;
+  player.swingT = -1;
+  player.cooldown = 0;
+  player.blocking = false;
+  player.guard = GUARD_MAX;
+  player.guardDelay = 0;
+  player.guardBroken = 0;
+  player.hp = PLAYER_MAX_HP;
+  player.iframes = 0;
+  player.hitFlash = 0;
+  boss = currentLevel.boss ? makeBoss(currentLevel.boss) : null;
+  bossDefeated = false;
+  bossHintCd = 0;
+  floaters = [];
+  debris = [];
   stepTimer = 0;
   beepTimer = 0;
   wasHidden = false;
@@ -527,6 +757,12 @@ function showLevelIntro(idx) {
   loadLevel(idx);
   document.getElementById('introTitle').textContent = currentLevel.name;
   document.getElementById('introTip').textContent = currentLevel.tip;
+  const stars = document.getElementById('introStars');
+  stars.textContent = '';
+  const label = document.createElement('b');
+  label.textContent = 'Difficulty';
+  stars.appendChild(label);
+  stars.appendChild(document.createTextNode('★'.repeat(idx + 1) + '☆'.repeat(levels.length - idx - 1)));
   document.getElementById('levelIntroScreen').classList.remove('hidden');
   state = 'levelIntro';
 }
@@ -575,20 +811,258 @@ function updatePlayer(dt) {
   if (keys['arrowdown'] || keys['s']) dy += 1;
   if (keys['arrowleft'] || keys['a']) dx -= 1;
   if (keys['arrowright'] || keys['d']) dx += 1;
+
+  // holding B raises the guard, as long as it isn't broken or empty
+  player.blocking = !!keys['b'] && player.guardBroken <= 0 && player.guard > 0;
+  const speed = player.speed * (player.blocking ? BLOCK_SPEED : 1);
+
   if (dx !== 0 || dy !== 0) {
     const len = Math.hypot(dx, dy);
     dx = dx/len; dy = dy/len;
     player.facing = Math.atan2(dy, dx);
-    moveWithCollision(player, dx * player.speed * dt, dy * player.speed * dt);
+    moveWithCollision(player, dx * speed * dt, dy * speed * dt);
     stepTimer -= dt;
     if (stepTimer <= 0) { sfxStep(); stepTimer = 0.26; }
+    player.moving = true;
   } else {
     stepTimer = 0;
+    player.moving = false;
   }
+
+  player.cooldown = Math.max(0, player.cooldown - dt);
+  if (player.iframes > 0) player.iframes = Math.max(0, player.iframes - dt);
+  if (player.hitFlash > 0) player.hitFlash = Math.max(0, player.hitFlash - dt);
+  if (player.swingT >= 0) {
+    player.swingT += dt;
+    if (player.swingT >= SWING_TIME) player.swingT = -1;
+  }
+  if (player.blocking) {
+    player.swingT = -1;                                   // can't swing while guarding
+    player.guard = Math.max(0, player.guard - BLOCK_DRAIN * dt);
+    player.guardDelay = GUARD_REGEN_DELAY;
+    if (player.guard <= 0) breakGuard();
+  } else {
+    if (player.guardBroken > 0) player.guardBroken = Math.max(0, player.guardBroken - dt);
+    if (player.guardDelay > 0) player.guardDelay -= dt;
+    else player.guard = Math.min(GUARD_MAX, player.guard + GUARD_REGEN * dt);
+  }
+
+  if ((keys[' '] || keys['j']) && !player.blocking && player.cooldown === 0) swingSaber();
+}
+
+function breakGuard() {
+  player.guard = 0;
+  player.guardBroken = GUARD_BREAK_TIME;
+  player.blocking = false;
+  player.guardDelay = GUARD_REGEN_DELAY;
+  floaters.push({ x: player.x + player.w / 2, y: player.y - 16, t: 0, text: 'GUARD BROKEN', tone: 'blue' });
+  sfxGuardBreak();
+}
+
+// Can the raised saber stop this car? Only if it's in front of the capybara.
+function canBlockCar(v) {
+  if (!player.blocking) return false;
+  const pc = center(player), vc = center(v);
+  return Math.abs(normAngle(Math.atan2(vc.y - pc.y, vc.x - pc.x) - player.facing)) <= BLOCK_ARC;
+}
+
+// The car bounces off the saber: it's thrown back, crawls for a moment, and takes damage. You lose some guard.
+function deflectCar(v) {
+  const pc = center(player);
+  v.x -= v.dir * CAR_KNOCKBACK;
+  v.stun = CAR_STUN;
+  v.hp -= BLOCK_CAR_DAMAGE;
+  v.hitFlash = 0.15;
+  player.guard = Math.max(0, player.guard - BLOCK_HIT_COST);
+  player.guardDelay = GUARD_REGEN_DELAY;
+  floaters.push({ x: pc.x, y: player.y - 16, t: 0, text: 'BLOCK', tone: 'blue' });
+  spawnSparks(pc.x + Math.cos(player.facing) * 22, pc.y + Math.sin(player.facing) * 22);
+  if (v.hp <= 0) { v.dead = true; breakCar(v); sfxCarBreak(); }
+  else sfxBlock();
+  if (player.guard <= 0) breakGuard();
+}
+
+/* ---------- Darth Vader ---------- */
+
+function makeBoss(def) {
+  return { ...def, maxHp: def.hp, state: 'wait', t: 0, aim: Math.PI / 2, lockAim: Math.PI / 2,
+           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2 };
+}
+
+function damagePlayer(n) {
+  if (player.iframes > 0) return;
+  player.hp -= n;
+  player.iframes = PLAYER_IFRAMES;
+  player.hitFlash = 0.2;
+  const pc = center(player);
+  floaters.push({ x: pc.x, y: player.y - 16, t: 0, text: '-' + n });
+  if (boss) {                                               // shoved back from Vader
+    const bc = center(boss), d = Math.hypot(pc.x - bc.x, pc.y - bc.y) || 1;
+    moveWithCollision(player, (pc.x - bc.x) / d * 22, (pc.y - bc.y) / d * 22);
+  }
+  sfxPlayerHurt();
+  if (player.hp <= 0) triggerCaught('Darth Vader struck you down!');
+}
+
+// The moment his saber comes down: it lands only if you're still close and in front of him.
+function vaderStrike(b) {
+  const bc = center(b), pc = center(player);
+  const dx = pc.x - bc.x, dy = pc.y - bc.y;
+  if (Math.hypot(dx, dy) > VADER_REACH) return;
+  if (Math.abs(normAngle(Math.atan2(dy, dx) - b.lockAim)) > VADER_ARC) return;
+  const facingHim = Math.abs(normAngle(Math.atan2(-dy, -dx) - player.facing)) <= BLOCK_ARC;
+  if (player.blocking && facingHim) {                       // parried: no damage, and he's staggered
+    player.guard = Math.max(0, player.guard - VADER_BLOCK_COST);
+    player.guardDelay = GUARD_REGEN_DELAY;
+    floaters.push({ x: pc.x, y: player.y - 16, t: 0, text: 'BLOCK', tone: 'blue' });
+    spawnSparks((pc.x + bc.x) / 2, (pc.y + bc.y) / 2);
+    b.state = 'recover'; b.t = -0.4;
+    sfxBlock();
+    if (player.guard <= 0) breakGuard();
+    return;
+  }
+  damagePlayer(VADER_DAMAGE);
+}
+
+function updateBoss(dt) {
+  const b = boss;
+  if (!b) return;
+  if (b.hitFlash > 0) b.hitFlash = Math.max(0, b.hitFlash - dt);
+  if (b.dead) { b.deadT += dt; return; }
+
+  const bc = center(b), pc = center(player);
+  const dx = pc.x - bc.x, dy = pc.y - bc.y, dist = Math.hypot(dx, dy) || 1;
+  if (b.state !== 'windup' && b.state !== 'strike') b.aim = Math.atan2(dy, dx);    // he turns to face you, but stays put
+
+  if (!b.enraged && b.hp <= b.maxHp / 2) {                  // half health: swings faster, and less time to punish him
+    b.enraged = true;
+    floaters.push({ x: bc.x, y: b.y - 18, t: 0, text: 'ENRAGED' });
+    sfxVaderRage();
+  }
+  const rage = b.enraged ? 1.25 : 1;
+
+  b.breathT -= dt;
+  if (b.breathT <= 0) { sfxVaderBreath(); b.breathT = 2.4; }
+
+  b.t += dt;
+  if (b.state === 'wait') {
+    if (b.t >= b.wake) { b.state = 'guard'; b.t = 0; sfxVaderIgnite(); }
+  } else if (b.state === 'guard') {
+    if (dist <= VADER_REACH) { b.state = 'windup'; b.t = 0; b.lockAim = b.aim; sfxVaderWindup(); }
+  } else if (b.state === 'windup') {
+    if (b.t >= VADER_WINDUP / rage) { b.state = 'strike'; b.t = 0; sfxVaderSwing(); vaderStrike(b); }
+  } else if (b.state === 'strike') {
+    if (b.t >= VADER_STRIKE) { b.state = 'recover'; b.t = 0; }
+  } else if (b.state === 'recover') {
+    if (b.t >= VADER_RECOVER / rage) { b.state = 'guard'; b.t = 0; }
+  }
+}
+
+function defeatBoss() {
+  boss.dead = true;
+  boss.deadT = 0;
+  bossDefeated = true;
+  obstacles = obstacles.filter(o => !o.barrier);            // the gate unseals
+  floaters.push({ x: exitGate.x + exitGate.w / 2, y: 70, t: 0, text: 'EXIT UNSEALED', tone: 'blue' });
+  sfxVaderDefeat();
+}
+
+// Swing the lightsaber. Every living person within reach, in front of the capybara, takes 1 damage;
+// every car whose nearest edge is within reach takes 2.
+function swingSaber() {
+  player.swingT = 0;
+  player.cooldown = SABER_COOLDOWN;
+  sfxSaberSwing();
+  const pc = center(player);
+  let struck = false, defeated = false, carHit = false, carBroke = false;
+  hazards.forEach(h => {
+    if (h.type !== 'human' || h.dead) return;
+    const hc = center(h);
+    const dx = hc.x - pc.x, dy = hc.y - pc.y;
+    if (Math.hypot(dx, dy) > SABER_REACH) return;
+    if (Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
+    h.hp -= 1;
+    h.hitFlash = 0.15;
+    floaters.push({ x: hc.x, y: h.y - 16, t: 0, text: '-1' });
+    struck = true;
+    if (h.hp <= 0) { h.dead = true; h.deadT = 0; defeated = true; }
+  });
+  vehicles.forEach(v => {
+    if (v.dead) return;
+    const nx = Math.max(v.x, Math.min(pc.x, v.x + v.w)), ny = Math.max(v.y, Math.min(pc.y, v.y + v.h));
+    const dx = nx - pc.x, dy = ny - pc.y, dist = Math.hypot(dx, dy);
+    if (dist > CAR_REACH) return;
+    if (dist > 0.5 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
+    v.hp -= SABER_CAR_DAMAGE;
+    v.hitFlash = 0.15;
+    floaters.push({ x: nx, y: v.y - 12, t: 0, text: '-' + SABER_CAR_DAMAGE });
+    spawnSparks(nx, ny);
+    carHit = true;
+    if (v.hp <= 0) { v.dead = true; breakCar(v); carBroke = true; }
+  });
+  let bossHit = false, bossDown = false;
+  if (boss && !boss.dead) {
+    const bc = center(boss), dx = bc.x - pc.x, dy = bc.y - pc.y;
+    if (Math.hypot(dx, dy) <= SABER_REACH + 8 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC) {
+      boss.hp -= 1;
+      boss.hitFlash = 0.15;
+      floaters.push({ x: bc.x, y: boss.y - 12, t: 0, text: '-1' });
+      bossHit = true;
+      if (boss.hp <= 0) { defeatBoss(); bossDown = true; }
+    }
+  }
+  if (bossDown) { /* defeatBoss() already played the victory sound */ }
+  else if (carBroke) sfxCarBreak();
+  else if (defeated) sfxDefeat();
+  else if (carHit) sfxCarHit();
+  else if (struck || bossHit) sfxSaberHit();
+}
+
+function spawnSparks(x, y) {
+  for (let i = 0; i < 6; i++) {
+    const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 100;
+    debris.push({ kind: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: 0.22 + Math.random() * 0.15, size: 1.7 });
+  }
+}
+
+// A smashed car bursts into a flash, flying shards and smoke, then is gone for good.
+function breakCar(v) {
+  const cx = v.x + v.w / 2, cy = v.y + v.h / 2;
+  debris.push({ kind: 'flash', x: cx, y: cy, vx: 0, vy: 0, t: 0, life: 0.3, size: 26 });
+  const colors = ['#c94a3a', '#a83a2c', '#222222', '#9ed6f0', '#555555'];
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * Math.PI * 2, s = 70 + Math.random() * 170;
+    debris.push({ kind: 'shard', x: v.x + Math.random() * v.w, y: v.y + Math.random() * v.h,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 16,
+      t: 0, life: 0.6 + Math.random() * 0.4, size: 4 + Math.random() * 6, color: colors[i % colors.length] });
+  }
+  for (let i = 0; i < 7; i++) {
+    debris.push({ kind: 'smoke', x: cx + (Math.random() - 0.5) * v.w * 0.7, y: cy + (Math.random() - 0.5) * v.h,
+      vx: (Math.random() - 0.5) * 30, vy: (Math.random() - 0.5) * 30 - 10, t: 0, life: 0.9 + Math.random() * 0.5, size: 10 + Math.random() * 6 });
+  }
+}
+
+function updateEffects(dt) {
+  if (bossHintCd > 0) bossHintCd -= dt;
+  floaters.forEach(f => { f.t += dt; f.y -= 34 * dt; });
+  floaters = floaters.filter(f => f.t < 0.7);
+
+  const drag = Math.pow(0.04, dt);
+  debris.forEach(d => { d.t += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vx *= drag; d.vy *= drag; if (d.vr) d.rot += d.vr * dt; });
+  debris = debris.filter(d => d.t < d.life);
+
+  // badly damaged cars smoulder
+  vehicles.forEach(v => {
+    if (!v.dead && v.hp <= 4 && Math.random() < dt * 9) {
+      debris.push({ kind: 'smoke', x: v.x + (v.dir > 0 ? v.w - 8 : 8), y: v.y + 6, vx: -v.dir * 10, vy: -12, t: 0, life: 0.7, size: 5 });
+    }
+  });
 }
 
 function updateHazards(dt) {
   hazards.forEach(h => {
+    if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
+    if (h.dead) { h.deadT += dt; return; }
     const dest = h.forward ? h.pts[1] : h.pts[0];
     const ddx = dest.x - h.x, ddy = dest.y - h.y;
     const dist = Math.hypot(ddx, ddy);
@@ -605,16 +1079,24 @@ function updateHazards(dt) {
 
 function updateVehicles(dt) {
   vehicles.forEach(v => {
-    v.x += v.dir * v.speed * dt;
+    if (v.hitFlash > 0) v.hitFlash = Math.max(0, v.hitFlash - dt);
+    if (v.dead) return;
+    if (v.stun > 0) v.stun = Math.max(0, v.stun - dt);
+    v.x += v.dir * v.speed * (v.stun > 0 ? 0.15 : 1) * dt;
     if (v.dir > 0 && v.x > W) v.x = -v.w;
     if (v.dir < 0 && v.x < -v.w) v.x = W;
   });
-  const hit = vehicles.some(v => rectsOverlap(player, v));
-  if (hit) triggerCaught('A car nearly ran you over!');
+  let runOver = false;
+  vehicles.forEach(v => {
+    if (v.dead || !rectsOverlap(player, v)) return;
+    if (canBlockCar(v)) deflectCar(v);
+    else runOver = true;
+  });
+  if (runOver) triggerCaught('A car nearly ran you over!');
 }
 
 function canDetect(h) {
-  if (inBush(player)) return false;
+  if (h.dead || inBush(player)) return false;
   const hc = {x: h.x + h.w/2, y: h.y + h.h/2};
   const pc = center(player);
   const dx = pc.x - hc.x, dy = pc.y - hc.y;
@@ -628,6 +1110,7 @@ function canDetect(h) {
 
 const CATCH_MESSAGES = {
   human: 'Someone spotted you and carried you back!',
+  zookeeper: 'A zookeeper spotted you and carried you back to your pen!',
   dog: 'A dog sniffed you out and started barking!',
   cow: 'A startled cow gave away your position!',
   reindeer: 'A reindeer spotted you and stamped the alarm!',
@@ -639,7 +1122,7 @@ function updateSuspicion(dt) {
     const rate = Math.max(...seen.map(h => 1/h.fillTime));
     player.suspicion += rate * dt;
   } else {
-    player.suspicion -= dt / 0.6;
+    player.suspicion -= dt / currentLevel.difficulty.decay;
   }
   player.suspicion = Math.max(0, Math.min(1, player.suspicion));
 
@@ -650,13 +1133,20 @@ function updateSuspicion(dt) {
   }
 
   if (player.suspicion >= 1) {
-    triggerCaught(CATCH_MESSAGES[seen[0].type] || 'You were spotted!');
+    triggerCaught(CATCH_MESSAGES[seen[0].look] || CATCH_MESSAGES[seen[0].type] || 'You were spotted!');
   }
   return seen.length > 0;
 }
 
 function checkWin() {
   if (rectsOverlap(player, exitGate)) {
+    if (boss && !bossDefeated) {                         // the exit is sealed until Vader falls
+      if (bossHintCd <= 0) {
+        floaters.push({ x: exitGate.x + exitGate.w / 2, y: 70, t: 0, text: 'DEFEAT VADER FIRST' });
+        bossHintCd = 1.5;
+      }
+      return;
+    }
     if (currentLevelIndex < levels.length - 1) {
       sfxLevelComplete();
       showLevelIntro(currentLevelIndex + 1);
@@ -665,6 +1155,7 @@ function checkWin() {
       state = 'won';
       document.getElementById('winTime').textContent = elapsed.toFixed(1);
       document.getElementById('winScreen').classList.remove('hidden');
+      beginScoreEntry(elapsed, lives);
     }
   }
 }
@@ -810,6 +1301,27 @@ function drawBridge(b) {
 function drawObstacle(o) {
   if (o.type === 'waterfallCliff') { drawWaterfallCliff(o); return; }
   if (o.type === 'water') { drawWater(o); return; }
+  if (o.type === 'pillar') {
+    ctx.fillStyle = '#20202a'; ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.fillStyle = '#2c2c38'; ctx.fillRect(o.x + 5, o.y + 5, o.w - 10, o.h - 10);
+    ctx.save();
+    ctx.shadowColor = '#e02020'; ctx.shadowBlur = 8;
+    ctx.strokeStyle = 'rgba(230,50,50,0.85)'; ctx.lineWidth = 2;
+    ctx.strokeRect(o.x + 1, o.y + 1, o.w - 2, o.h - 2);
+    ctx.restore();
+    return;
+  }
+  if (o.type === 'barrier') {                  // red energy field sealing the gate
+    const pulse = 0.5 + 0.5 * Math.sin(animTime * 6);
+    ctx.fillStyle = 'rgba(255,40,40,' + (0.10 + 0.10 * pulse).toFixed(2) + ')';
+    ctx.fillRect(o.x, o.y, o.w, o.h + 6);
+    ctx.save();
+    ctx.shadowColor = '#ff3030'; ctx.shadowBlur = 10;
+    ctx.strokeStyle = 'rgba(255,120,120,' + (0.6 + 0.3 * pulse).toFixed(2) + ')'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(o.x, o.y + o.h + 6); ctx.lineTo(o.x + o.w, o.y + o.h + 6); ctx.stroke();
+    ctx.restore();
+    return;
+  }
   if (o.type === 'rock') {
     ctx.fillStyle = '#8a8a8a';
     ctx.beginPath();
@@ -926,7 +1438,56 @@ function drawVisionShape(h, seeing) {
   ctx.restore();
 }
 
+function drawZookeeper(h) {
+  const x = h.x, y = h.y, w = h.w, cx = x + w/2;
+
+  // boots and green work trousers
+  ctx.fillStyle = '#4d6033';
+  ctx.fillRect(x + 1, y + 26, w - 2, 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(cx - 0.5, y + 27, 1, 5);
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(x + 1, y + 31, 9, 3);
+  ctx.fillRect(x + w - 10, y + 31, 9, 3);
+
+  // khaki uniform shirt with sleeves and hands
+  ctx.fillStyle = '#c9b56f';
+  ctx.fillRect(x, y + 11, w, 14);
+  ctx.fillRect(x - 3, y + 12, 4, 10);
+  ctx.fillRect(x + w - 1, y + 12, 4, 10);
+  ctx.fillStyle = '#e8b98a';
+  ctx.beginPath(); ctx.arc(x - 1, y + 23.5, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w + 1, y + 23.5, 2, 0, Math.PI*2); ctx.fill();
+
+  // chest pocket, yellow name badge and belt with buckle
+  ctx.strokeStyle = '#a08c4a'; ctx.lineWidth = 1;
+  ctx.strokeRect(x + 3.5, y + 14.5, 6, 5);
+  ctx.fillStyle = '#f2c230';
+  ctx.fillRect(x + w - 9, y + 15, 5, 3);
+  ctx.fillStyle = '#3a2a1a';
+  ctx.fillRect(x, y + 24, w, 2.5);
+  ctx.fillStyle = '#d4b13a';
+  ctx.fillRect(cx - 1.5, y + 24, 3, 2.5);
+
+  // face
+  ctx.fillStyle = '#e8b98a';
+  ctx.beginPath(); ctx.arc(cx, y + 8, 7, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2a1a0a';
+  ctx.beginPath(); ctx.arc(cx - 2.6, y + 8.5, 0.9, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + 2.6, y + 8.5, 0.9, 0, Math.PI*2); ctx.fill();
+
+  // wide-brimmed safari hat with a brown band
+  ctx.fillStyle = '#c2ab62';
+  ctx.beginPath(); ctx.ellipse(cx, y + 1, 6.6, 5.2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#5a3f1e';
+  ctx.fillRect(cx - 6.4, y + 1.6, 12.8, 2);
+  ctx.fillStyle = '#b39b55';
+  ctx.beginPath(); ctx.ellipse(cx, y + 3.6, 12.5, 3.4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#7a6a35'; ctx.lineWidth = 1; ctx.stroke();
+}
+
 function drawHazardBody(h) {
+  if (h.look === 'zookeeper') { drawZookeeper(h); return; }
   if (h.type === 'human') {
     ctx.fillStyle = '#2255aa';
     ctx.fillRect(h.x, h.y + 10, h.w, h.h - 14);
@@ -987,13 +1548,57 @@ function drawHazardBody(h) {
   }
 }
 
+function drawHpPips(h) {
+  const pw = 4, gap = 1, total = h.maxHp * pw + (h.maxHp - 1) * gap;
+  const x0 = h.x + h.w / 2 - total / 2, y0 = h.y - 14;
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(x0 - 1.5, y0 - 1.5, total + 3, pw + 3);
+  for (let i = 0; i < h.maxHp; i++) {
+    ctx.fillStyle = i < h.hp ? '#e23e3e' : '#4a2323';
+    ctx.fillRect(x0 + i * (pw + gap), y0, pw, pw);
+  }
+}
+
 function drawHazard(h) {
+  if (h.dead) {                        // defeated: topples over and fades out
+    if (h.deadT >= DEFEAT_FADE) return;
+    const cx = h.x + h.w / 2, cy = h.y + h.h / 2;
+    ctx.save();
+    ctx.globalAlpha = 1 - h.deadT / DEFEAT_FADE;
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.min(1, h.deadT / 0.25) * Math.PI / 2);
+    ctx.translate(-cx, -cy);
+    drawHazardBody(h);
+    ctx.restore();
+    return;
+  }
   const seeing = canDetect(h);
   drawVisionShape(h, seeing);
   drawHazardBody(h);
+  if (h.hitFlash > 0) {                // brief white flash when struck
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.65 * h.hitFlash / 0.15).toFixed(2) + ')';
+    ctx.beginPath(); ctx.ellipse(h.x + h.w / 2, h.y + h.h / 2, h.w / 2 + 5, h.h / 2 + 4, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  if (h.maxHp && h.hp < h.maxHp) drawHpPips(h);
+}
+
+function drawFloaters() {
+  ctx.font = 'bold 15px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  floaters.forEach(f => {
+    ctx.globalAlpha = Math.max(0, 1 - f.t / 0.7);
+    const blue = f.tone === 'blue';
+    ctx.strokeStyle = blue ? 'rgba(0,45,80,0.9)' : 'rgba(80,0,0,0.85)';
+    ctx.strokeText(f.text, f.x, f.y);
+    ctx.fillStyle = blue ? '#dff8ff' : '#ffd6d6';
+    ctx.fillText(f.text, f.x, f.y);
+  });
+  ctx.globalAlpha = 1;
 }
 
 function drawVehicle(v) {
+  if (v.dead) return;                  // smashed cars are gone; see breakCar for the wreckage
   ctx.fillStyle = '#c94a3a';
   ctx.fillRect(v.x, v.y, v.w, v.h);
   ctx.fillStyle = '#9ed6f0';
@@ -1002,6 +1607,108 @@ function drawVehicle(v) {
   ctx.fillStyle = '#222';
   ctx.beginPath(); ctx.arc(v.x+10, v.y+v.h, 6, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(v.x+v.w-10, v.y+v.h, 6, 0, Math.PI*2); ctx.fill();
+
+  // cracks appear as the car takes damage
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1.2;
+  if (v.hp <= 6) {
+    ctx.beginPath(); ctx.moveTo(v.x + v.w*0.30, v.y + 2); ctx.lineTo(v.x + v.w*0.38, v.y + 13); ctx.lineTo(v.x + v.w*0.33, v.y + 22); ctx.stroke();
+  }
+  if (v.hp <= 4) {
+    ctx.beginPath(); ctx.moveTo(v.x + v.w*0.62, v.y + 30); ctx.lineTo(v.x + v.w*0.55, v.y + 19); ctx.lineTo(v.x + v.w*0.66, v.y + 9); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(v.x, v.y, v.w, v.h);
+  }
+  if (v.hitFlash > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.7 * v.hitFlash / 0.15).toFixed(2) + ')';
+    ctx.fillRect(v.x, v.y, v.w, v.h);
+  }
+  if (v.hp < v.maxHp) {                // health bar
+    const bw = 34, bx = v.x + v.w / 2 - bw / 2, by = v.y - 9;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(bx - 1.5, by - 1.5, bw + 3, 7);
+    ctx.fillStyle = '#e23e3e';
+    ctx.fillRect(bx, by, bw * Math.max(0, v.hp) / v.maxHp, 4);
+  }
+}
+
+function drawDebris() {
+  debris.forEach(d => {
+    const k = d.t / d.life;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - k);
+    if (d.kind === 'shard') {
+      ctx.translate(d.x, d.y); ctx.rotate(d.rot);
+      ctx.fillStyle = d.color;
+      ctx.fillRect(-d.size / 2, -d.size * 0.3, d.size, d.size * 0.6);
+    } else if (d.kind === 'smoke') {
+      ctx.fillStyle = 'rgba(70,70,70,0.55)';
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.size * (1 + 1.6 * k), 0, Math.PI * 2); ctx.fill();
+    } else if (d.kind === 'flash') {
+      ctx.fillStyle = 'rgba(255,190,70,0.85)';
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.size * (0.6 + k), 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = '#ffe27a';
+      ctx.beginPath(); ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+const FUR_STROKES = [
+  [-12,-6],[-8,-8],[-4,-7],[0,-8],[4,-6],[-13,0],[-9,-2],[-5,1],[-1,-1],[3,1],
+  [-12,6],[-8,7],[-4,6],[0,8],[4,6],[-10,3],[-6,4],[-2,4],[-7,-5],[-2,-4],
+];
+
+// Held at the capybara's right side, blade forward. During a swing it sweeps across the front, leaving a glowing arc.
+function drawBlade(px, py, ang, len, glow) {
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(ang);
+  ctx.fillStyle = '#9a9aa6';
+  ctx.fillRect(-5, -1.8, 7, 3.6);
+  ctx.fillStyle = '#3a3a44';
+  ctx.fillRect(-2.5, -2.1, 1.6, 4.2);
+  ctx.lineCap = 'round';
+  ctx.shadowColor = '#4fd1ff';
+  ctx.shadowBlur = glow;
+  ctx.strokeStyle = 'rgba(79,209,255,0.95)'; ctx.lineWidth = 4.4;
+  ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(len, 0); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#effcff'; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(len, 0); ctx.stroke();
+  ctx.restore();
+}
+
+// Guard stance: the blade is held across the front and a shimmering energy shield fans out ahead.
+function drawGuardStance(p) {
+  const pulse = 0.5 + 0.5 * Math.sin(animTime * 14);
+  const fading = p.guard < 25 && Math.sin(animTime * 40) > 0;       // flickers when nearly spent
+  ctx.save();
+  ctx.globalAlpha *= fading ? 0.35 : 1;
+  const grad = ctx.createRadialGradient(8, 0, 8, 8, 0, 36);
+  grad.addColorStop(0, 'rgba(79,209,255,0)');
+  grad.addColorStop(1, 'rgba(79,209,255,' + (0.3 + 0.12 * pulse).toFixed(2) + ')');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.moveTo(8, 0); ctx.arc(8, 0, 36, -BLOCK_ARC, BLOCK_ARC); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(170,238,255,' + (0.6 + 0.3 * pulse).toFixed(2) + ')'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(8, 0, 36, -BLOCK_ARC, BLOCK_ARC); ctx.stroke();
+  drawBlade(31, 15, -Math.PI / 2 + 0.08, 30, 12);
+  ctx.restore();
+}
+
+function drawSaber(p) {
+  if (p.blocking) { drawGuardStance(p); return; }
+  const swinging = p.swingT >= 0;
+  const u = swinging ? Math.min(1, p.swingT / SWING_TIME) : 0;
+  const start = 0.95, end = -1.25;
+  const ang = swinging ? start + (end - start) * (1 - (1 - u) * (1 - u)) : 0.2;
+  const px = 5, py = 9.5, len = 27;
+
+  if (swinging) {
+    ctx.fillStyle = 'rgba(79,209,255,0.24)';
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, len + 3, ang, start); ctx.closePath(); ctx.fill();
+  }
+  drawBlade(px, py, ang, len, swinging ? 14 : 8);
 }
 
 function drawCapybara(p) {
@@ -1009,15 +1716,86 @@ function drawCapybara(p) {
   ctx.translate(p.x + p.w/2, p.y + p.h/2);
   const hidden = inBush(p);
   ctx.globalAlpha = hidden ? 0.55 : 1;
+  if (p.iframes > 0 && Math.floor(animTime * 20) % 2 === 0) ctx.globalAlpha *= 0.35;   // blinks while invulnerable
   ctx.rotate(p.facing);
-  ctx.fillStyle = '#8a6a3f';
-  ctx.beginPath(); ctx.ellipse(0, 0, p.w/2, p.h/2, 0, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#6f5230';
-  ctx.beginPath(); ctx.ellipse(p.w/2 - 3, -p.h/2 + 3, 5, 5, 0, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#2a2015';
-  ctx.beginPath(); ctx.arc(p.w/2 - 2, -2, 2, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#3a2a18';
-  ctx.beginPath(); ctx.ellipse(p.w/2 + 1, 3, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+
+  // soft ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath(); ctx.ellipse(-1, 2, 16, 11.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // short webbed feet, paddling in diagonal pairs while walking
+  const swing = p.moving ? Math.sin(animTime * 14) * 3 : 0;
+  ctx.fillStyle = '#4a3020';
+  [[6, -10, swing], [6, 10, -swing], [-9, -10, -swing], [-9, 10, swing]].forEach(([fx, fy, off]) => {
+    ctx.beginPath(); ctx.ellipse(fx + off, fy, 3.6, 2.4, 0, 0, Math.PI*2); ctx.fill();
+  });
+
+  // barrel-shaped body with coarse reddish-brown fur, darker at the flanks
+  const fur = ctx.createLinearGradient(0, -11, 0, 11);
+  fur.addColorStop(0, '#7a5230');
+  fur.addColorStop(0.5, '#a97848');
+  fur.addColorStop(1, '#7a5230');
+  ctx.fillStyle = fur;
+  ctx.beginPath(); ctx.ellipse(-2, 0, 15.5, 11, 0, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,35,15,0.55)'; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // fur texture and a lighter sheen along the back
+  ctx.strokeStyle = 'rgba(60,35,15,0.25)'; ctx.lineWidth = 0.6;
+  FUR_STROKES.forEach(([sx, sy], i) => {
+    const tilt = (i % 3 - 1) * 0.6;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 2.4, sy + tilt); ctx.stroke();
+  });
+  ctx.fillStyle = 'rgba(255,225,180,0.14)';
+  ctx.beginPath(); ctx.ellipse(-3, 0, 10, 4.5, 0, 0, Math.PI*2); ctx.fill();
+
+  // large blocky head: broad cranium blending into the blunt, boxy snout
+  const headFur = ctx.createLinearGradient(0, -8, 0, 8);
+  headFur.addColorStop(0, '#7f552f');
+  headFur.addColorStop(0.5, '#a07040');
+  headFur.addColorStop(1, '#7f552f');
+  ctx.fillStyle = headFur;
+  ctx.beginPath(); ctx.ellipse(11.5, 0, 9.5, 8, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(17.5, 0, 6.6, 6.6, 0, 0, Math.PI*2); ctx.fill();
+  // soft shading where the head meets the neck
+  ctx.fillStyle = 'rgba(50,28,10,0.22)';
+  ctx.beginPath(); ctx.ellipse(4.5, 0, 3, 7, 0, 0, Math.PI*2); ctx.fill();
+
+  // small ears set high on the back corners of the head
+  [[6.8, -6.6], [6.8, 6.6]].forEach(([ex, ey]) => {
+    ctx.fillStyle = '#4f321c';
+    ctx.beginPath(); ctx.ellipse(ex, ey, 2.5, 2, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#7d5240';
+    ctx.beginPath(); ctx.ellipse(ex + 0.3, ey * 0.94, 1.1, 0.8, 0, 0, Math.PI*2); ctx.fill();
+  });
+
+  // small dark nose pad with nostrils at the tip of the snout
+  ctx.fillStyle = '#2f1e14';
+  ctx.beginPath(); ctx.ellipse(22.6, 0, 2.2, 3.6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#6b4a3a';
+  ctx.beginPath(); ctx.arc(23.3, -1.4, 0.6, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(23.3, 1.4, 0.6, 0, Math.PI*2); ctx.fill();
+
+  // small eyes set on the sides of the head, with a catch-light
+  [[14, -5.2], [14, 5.2]].forEach(([ex, ey]) => {
+    ctx.fillStyle = '#1a1108';
+    ctx.beginPath(); ctx.arc(ex, ey, 1.3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.arc(ex + 0.4, ey - 0.4, 0.4, 0, Math.PI*2); ctx.fill();
+  });
+
+  // fine whiskers
+  ctx.strokeStyle = 'rgba(30,20,10,0.5)'; ctx.lineWidth = 0.5;
+  [-1, 1].forEach(s => {
+    ctx.beginPath(); ctx.moveTo(21, s * 3.4); ctx.lineTo(25.5, s * 6.6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(21.4, s * 2.2); ctx.lineTo(26, s * 3.8); ctx.stroke();
+  });
+
+  if (p.hitFlash > 0) {
+    ctx.fillStyle = 'rgba(255,50,50,' + (0.6 * p.hitFlash / 0.2).toFixed(2) + ')';
+    ctx.beginPath(); ctx.ellipse(1, 0, 19, 12.5, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  drawSaber(p);
   ctx.restore();
 }
 
@@ -1057,10 +1835,13 @@ const GATE_STYLES = {
   road: {fill:'#e8c34a', stroke:'#a8842a', text:'#3a2a05'},
   field: {fill:'#7a5230', stroke:'#4a3018', text:'#fff'},
   mountain: {fill:'#dfeffa', stroke:'#7a9ab0', text:'#1a2f3a'},
+  vader: {fill:'#bfeaff', stroke:'#4a9ac0', text:'#0c2a3a'},
 };
+const GATE_LOCKED = {fill:'#3a1010', stroke:'#a02020', text:'#ff9a9a'};
 
 function drawExitGate() {
-  const style = GATE_STYLES[currentLevel.theme] || GATE_STYLES.zoo;
+  const locked = boss && !bossDefeated;
+  const style = locked ? GATE_LOCKED : (GATE_STYLES[currentLevel.theme] || GATE_STYLES.zoo);
   ctx.fillStyle = style.fill;
   ctx.fillRect(exitGate.x, 0, exitGate.w, 40);
   ctx.strokeStyle = style.stroke; ctx.lineWidth = 4;
@@ -1068,7 +1849,129 @@ function drawExitGate() {
   ctx.fillStyle = style.text;
   ctx.font = 'bold 16px Segoe UI';
   ctx.textAlign = 'center';
-  ctx.fillText(currentLevel.exitLabel, exitGate.x + exitGate.w/2, 26);
+  ctx.fillText(locked ? 'SEALED' : currentLevel.exitLabel, exitGate.x + exitGate.w/2, 26);
+}
+
+function drawGroundVader() {
+  ctx.fillStyle = '#12121a';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(120,120,170,0.10)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); }
+  for (let j = 0; j <= H; j += 40) { ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(W, j); ctx.stroke(); }
+  const glow = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 430);
+  glow.addColorStop(0, 'rgba(190,25,25,0.22)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(210,50,50,0.28)'; ctx.lineWidth = 3;
+  [70, 115].forEach(r => { ctx.beginPath(); ctx.arc(W/2, H/2, r, 0, Math.PI * 2); ctx.stroke(); });
+}
+
+// The warning: a red fan on the floor showing exactly where his saber will come down.
+function drawVaderTelegraph(b) {
+  if (b.state !== 'windup') return;
+  const rage = b.enraged ? 1.25 : 1, u = Math.min(1, b.t / (VADER_WINDUP / rage)), bc = center(b);
+  ctx.fillStyle = 'rgba(255,40,40,' + (0.10 + 0.24 * u).toFixed(2) + ')';
+  ctx.beginPath(); ctx.moveTo(bc.x, bc.y); ctx.arc(bc.x, bc.y, VADER_REACH, b.lockAim - VADER_ARC, b.lockAim + VADER_ARC); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,110,110,' + (0.35 + 0.4 * u).toFixed(2) + ')'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(bc.x, bc.y, VADER_REACH, b.lockAim - VADER_ARC, b.lockAim + VADER_ARC); ctx.stroke();
+}
+
+function drawVader(b) {
+  const x = b.x, y = b.y, cx = x + b.w / 2, rage = b.enraged ? 1.25 : 1;
+  ctx.save();
+  if (b.dead) {                                  // topples over and fades
+    const cy = y + b.h / 2;
+    ctx.globalAlpha = Math.max(0, 1 - b.deadT / 1.4);
+    ctx.translate(cx, cy); ctx.rotate(Math.min(1, b.deadT / 0.5) * Math.PI / 2); ctx.translate(-cx, -cy);
+  }
+  // shadow, cape, boots, torso
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.ellipse(cx, y + b.h - 1, 18, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#15151b';
+  ctx.beginPath(); ctx.moveTo(cx - 13, y + 15); ctx.lineTo(cx + 13, y + 15); ctx.lineTo(cx + 18, y + b.h - 2); ctx.lineTo(cx - 18, y + b.h - 2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#0b0b0f';
+  ctx.fillRect(cx - 8, y + 33, 6, 12); ctx.fillRect(cx + 2, y + 33, 6, 12);
+  ctx.fillStyle = '#1b1b22';
+  ctx.fillRect(cx - 10, y + 15, 20, 18);
+  ctx.fillStyle = '#2c2c36';
+  ctx.fillRect(cx - 6, y + 19, 12, 8);
+  ctx.fillStyle = '#e33'; ctx.fillRect(cx - 5, y + 21, 2.4, 2.4);
+  ctx.fillStyle = '#3af'; ctx.fillRect(cx - 1.2, y + 21, 2.4, 2.4);
+  ctx.fillStyle = '#3d5'; ctx.fillRect(cx + 2.6, y + 21, 2.4, 2.4);
+  ctx.fillStyle = '#34343f'; ctx.fillRect(cx - 10, y + 30, 20, 3);
+  ctx.fillStyle = '#b8b8c4'; ctx.fillRect(cx - 2, y + 30, 4, 3);
+  ctx.fillStyle = '#111116';
+  ctx.fillRect(cx - 15, y + 16, 5, 14);          // the arm without the saber
+  // the helmet: dome, face plate, red-tinted lenses, breathing grille
+  ctx.fillStyle = '#08080c';
+  ctx.beginPath(); ctx.ellipse(cx, y + 8, 10, 10, 0, Math.PI, 0); ctx.lineTo(cx + 10, y + 13); ctx.lineTo(cx - 10, y + 13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#20202a';
+  ctx.beginPath(); ctx.moveTo(cx - 6, y + 8); ctx.lineTo(cx + 6, y + 8); ctx.lineTo(cx + 4.5, y + 16); ctx.lineTo(cx - 4.5, y + 16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#5a0f12';
+  ctx.beginPath(); ctx.ellipse(cx - 3, y + 10, 2.4, 1.6, 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + 3, y + 10, 2.4, 1.6, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillRect(cx - 4, y + 9.4, 1, 0.9); ctx.fillRect(cx + 2, y + 9.4, 1, 0.9);
+  ctx.strokeStyle = '#6a6a78'; ctx.lineWidth = 0.7;
+  for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(cx + i * 1.8, y + 13); ctx.lineTo(cx + i * 1.8, y + 15.5); ctx.stroke(); }
+
+  // the red lightsaber: held toward you, raised for the wind-up, swept down for the strike
+  if (!b.dead) {
+    const base = (b.state === 'windup' || b.state === 'strike') ? b.lockAim : b.aim;
+    let ang = base + 0.5;
+    if (b.state === 'windup') ang = base + 0.5 + 1.1 * Math.min(1, b.t / (VADER_WINDUP / rage));
+    else if (b.state === 'strike') { const u = Math.min(1, b.t / VADER_STRIKE); ang = base + 1.6 - 3.0 * (1 - (1 - u) * (1 - u)); }
+    else if (b.state === 'recover') ang = base - 1.2;
+    const px = cx + Math.cos(base) * 8, py = y + 24 + Math.sin(base) * 8, len = 34;
+    if (b.state === 'strike') {
+      ctx.fillStyle = 'rgba(255,50,50,0.30)';
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, len + 3, ang, base + 1.6); ctx.closePath(); ctx.fill();
+    }
+    ctx.save();
+    ctx.translate(px, py); ctx.rotate(ang);
+    ctx.fillStyle = '#9a9aa6'; ctx.fillRect(-5, -1.9, 7, 3.8);
+    ctx.fillStyle = '#33333c'; ctx.fillRect(-2.5, -2.2, 1.6, 4.4);
+    ctx.lineCap = 'round';
+    ctx.shadowColor = '#ff2020'; ctx.shadowBlur = b.state === 'windup' || b.state === 'strike' ? 16 : 10;
+    ctx.strokeStyle = 'rgba(255,40,40,0.95)'; ctx.lineWidth = 4.8;
+    ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(len, 0); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffe4e4'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(len, 0); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#111116';                   // his gloved hand on the hilt
+    ctx.beginPath(); ctx.arc(px, py, 3.2, 0, Math.PI * 2); ctx.fill();
+  }
+  if (b.hitFlash > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.6 * b.hitFlash / 0.15).toFixed(2) + ')';
+    ctx.beginPath(); ctx.ellipse(cx, y + b.h / 2, 20, b.h / 2 + 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBossBar() {
+  if (!boss || boss.dead) return;
+  const bw = 320, bx = W / 2 - bw / 2, by = H - 34;
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 13px Segoe UI';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+  ctx.strokeText(boss.name + (boss.enraged ? ' — ENRAGED' : ''), W / 2, by - 6);
+  ctx.fillStyle = boss.enraged ? '#ff8a6a' : '#ffd0d0';
+  ctx.fillText(boss.name + (boss.enraged ? ' — ENRAGED' : ''), W / 2, by - 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(bx - 3, by - 3, bw + 6, 16);
+  ctx.fillStyle = '#4a1414'; ctx.fillRect(bx, by, bw, 10);
+  ctx.fillStyle = boss.enraged ? '#ff5a2a' : '#e23e3e';
+  ctx.fillRect(bx, by, bw * Math.max(0, boss.hp) / boss.maxHp, 10);
+}
+
+let shownHp = -1;
+function updateHpDisplay() {
+  const wrap = document.getElementById('hpWrap');
+  const show = !!currentLevel.boss;
+  wrap.classList.toggle('hidden', !show);
+  if (!show || shownHp === player.hp) return;
+  shownHp = player.hp;
+  [...document.getElementById('hpPips').children].forEach((s, i) => s.classList.toggle('off', i >= player.hp));
 }
 
 function drawGroundMountain() {
@@ -1088,6 +1991,7 @@ function draw(seenNow) {
   if (currentLevel.theme === 'road') drawGroundRoad();
   else if (currentLevel.theme === 'field') drawGroundField();
   else if (currentLevel.theme === 'mountain') drawGroundMountain();
+  else if (currentLevel.theme === 'vader') drawGroundVader();
   else drawGroundZoo();
 
   drawExitGate();
@@ -1096,9 +2000,17 @@ function draw(seenNow) {
   bushes.forEach(drawBush);
   decor.forEach(drawDecorItem);
   vehicles.forEach(drawVehicle);
+  drawDebris();
   hazards.forEach(drawHazard);
+  if (boss) { drawVaderTelegraph(boss); drawVader(boss); }
   drawCapybara(player);
+  drawFloaters();
+  drawBossBar();
+  updateHpDisplay();
 
+  const guardFill = document.getElementById('guardFill');
+  guardFill.style.width = (player.guard / GUARD_MAX * 100).toFixed(0) + '%';
+  guardFill.style.background = player.guardBroken > 0 ? '#8a94a0' : (player.guard < 25 ? '#ff8a33' : '#4fd1ff');
   document.getElementById('suspicionFill').style.width = (player.suspicion*100).toFixed(0) + '%';
   document.getElementById('suspicionFill').style.background = seenNow ? '#e23e3e' : (player.suspicion > 0.5 ? '#ff8a33' : '#ffcc33');
   document.getElementById('timeVal').textContent = elapsed.toFixed(1);
@@ -1118,6 +2030,8 @@ function loop(now) {
     elapsed += dt;
     updatePlayer(dt);
     updateHazards(dt);
+    updateBoss(dt);
+    updateEffects(dt);
     updateVehicles(dt);
     const hiddenNow = inBush(player);
     if (hiddenNow && !wasHidden) sfxHide();
@@ -1132,8 +2046,120 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
+/* ---------- Leaderboard (saved in this browser) ---------- */
+
+const LB_KEY = 'capybara_leaderboard_v2';   // v2: scores are for the five-level run (v1 held four-level times)
+const LB_NAME_KEY = 'capybara_player_name';
+const LB_STORE_MAX = 50;
+const LB_WIN_ROWS = 8;
+let pendingScore = null;
+
+function loadScores() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(LB_KEY) || '[]');
+    return Array.isArray(arr) ? arr.filter(s => s && typeof s.time === 'number' && typeof s.name === 'string') : [];
+  } catch (e) { return []; }
+}
+
+function storeScores(list) {
+  try { localStorage.setItem(LB_KEY, JSON.stringify(list.slice(0, LB_STORE_MAX))); return true; }
+  catch (e) { return false; }
+}
+
+function fmtTime(t) {
+  const total = Math.round(t * 10) / 10;
+  const m = Math.floor(total / 60);
+  const s = (total - m * 60).toFixed(1);
+  return m > 0 ? `${m}:${s.padStart(4, '0')}` : `${s}s`;
+}
+
+// Fastest time wins; ties go to whoever finished with more lives, then whoever got there first.
+function addScore(name, time, livesLeft) {
+  const entry = { name, time: Math.round(time * 10) / 10, lives: livesLeft, date: Date.now() };
+  const list = loadScores();
+  list.push(entry);
+  list.sort((a, b) => a.time - b.time || b.lives - a.lives || a.date - b.date);
+  const rank = list.indexOf(entry) + 1;
+  return { rank, saved: storeScores(list), entry };
+}
+
+function renderBoard(container, limit, highlightDate) {
+  const scores = loadScores();
+  container.textContent = '';
+  if (!scores.length) {
+    const p = document.createElement('p');
+    p.textContent = 'No scores yet — be the first to escape!';
+    container.appendChild(p);
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'lb';
+  const head = table.insertRow();
+  ['#', 'Name', 'Time', 'Lives'].forEach((h, i) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    if (i === 0 || i === 2) th.className = 'num';
+    head.appendChild(th);
+  });
+  scores.slice(0, limit).forEach((s, i) => {
+    const tr = table.insertRow();
+    if (s.date === highlightDate) tr.className = 'me';
+    const lives = Math.max(1, Math.min(MAX_LIVES, s.lives | 0));
+    [String(i + 1), s.name, fmtTime(s.time), '❤️'.repeat(lives)].forEach((txt, j) => {
+      const td = tr.insertCell();
+      td.textContent = txt;
+      if (j === 0 || j === 2) td.className = 'num';
+    });
+  });
+  container.appendChild(table);
+}
+
+function beginScoreEntry(time, livesLeft) {
+  pendingScore = { time, lives: livesLeft };
+  document.getElementById('scoreEntry').classList.remove('hidden');
+  document.getElementById('winRank').classList.add('hidden');
+  document.getElementById('winBoard').textContent = '';
+  const input = document.getElementById('nameInput');
+  try { input.value = localStorage.getItem(LB_NAME_KEY) || ''; } catch (e) { input.value = ''; }
+  setTimeout(() => input.focus(), 50);
+}
+
+function submitScore() {
+  if (!pendingScore) return;
+  const name = document.getElementById('nameInput').value.trim().slice(0, 12) || 'Capybara';
+  try { localStorage.setItem(LB_NAME_KEY, name); } catch (e) {}
+  const { rank, saved, entry } = addScore(name, pendingScore.time, pendingScore.lives);
+  pendingScore = null;
+  document.getElementById('scoreEntry').classList.add('hidden');
+  const rankEl = document.getElementById('winRank');
+  if (!saved) rankEl.textContent = "Couldn't save your score in this browser.";
+  else if (rank <= LB_WIN_ROWS) rankEl.textContent = `You placed #${rank}!`;
+  else rankEl.textContent = `You placed #${rank} (top ${LB_WIN_ROWS} shown below)`;
+  rankEl.classList.remove('hidden');
+  renderBoard(document.getElementById('winBoard'), LB_WIN_ROWS, entry.date);
+}
+
+function showLeaderboard() {
+  document.getElementById('creditsScreen').classList.add('hidden');
+  renderBoard(document.getElementById('leaderboardBoard'), 10);
+  document.getElementById('leaderboardScreen').classList.remove('hidden');
+  state = 'leaderboard';
+}
+
+function hideLeaderboard() {
+  document.getElementById('leaderboardScreen').classList.add('hidden');
+  document.getElementById('creditsScreen').classList.remove('hidden');
+  state = 'credits';
+}
+
 /* ---------- UI wiring ---------- */
 
+document.getElementById('leaderboardBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); showLeaderboard(); });
+document.getElementById('leaderboardBackBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); hideLeaderboard(); });
+document.getElementById('saveScoreBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); submitScore(); });
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); ensureAudio(); sfxClick(); submitScore(); }
+});
 document.getElementById('startBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); startGame(); });
 document.getElementById('introContinueBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); continueFromIntro(); });
 document.getElementById('retryBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); retryLevel(); });
@@ -1147,6 +2173,11 @@ document.getElementById('playAgainBtn').addEventListener('click', () => {
 document.getElementById('muteBtn').addEventListener('click', () => { ensureAudio(); setMuted(!muted); });
 document.getElementById('muteBtn').textContent = muted ? '🔇' : '🔊';
 updateLivesDisplay();
+for (let i = 0; i < PLAYER_MAX_HP; i++) {      // health pips for the Vader fight
+  const pip = document.createElement('span');
+  pip.className = 'pip';
+  document.getElementById('hpPips').appendChild(pip);
+}
 
 loadLevel(0); // initial render behind the credits screen
 </script>
