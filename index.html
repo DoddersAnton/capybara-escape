@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Ezra's Capybara Escape Game</title>
 <link rel="icon" href="data:,">
 <style>
@@ -10,13 +11,21 @@
     background: #1b2a1b;
     display: flex; align-items: center; justify-content: center;
     font-family: "Segoe UI", Verdana, sans-serif;
+    overflow: hidden; overscroll-behavior: none;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
-  #wrap { position: relative; }
+  /* The game scales down to fit the screen (phones, small windows), keeping its 3:2 shape. */
+  #wrap {
+    position: relative;
+    width: min(972px, 100vw, calc((100vh - 12px) * 1.5 + 12px));
+    width: min(972px, 100vw, calc((100dvh - 12px) * 1.5 + 12px));
+  }
   canvas {
     background: #4c9a4c;
     border: 6px solid #5b3a1e;
     border-radius: 6px;
     display: block;
+    box-sizing: border-box; width: 100%; height: auto;
     box-shadow: 0 8px 30px rgba(0,0,0,0.5);
   }
   #hud {
@@ -45,10 +54,16 @@
   #hpPips .pip.off { background: rgba(0,0,0,0.45); }
   .overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; text-align: center;
+    align-items: center; justify-content: flex-start; text-align: center;
     background: rgba(10, 20, 10, 0.85); color: #fff; gap: 14px;
     border-radius: 2px; padding: 20px; box-sizing: border-box;
+    overflow-y: auto; touch-action: pan-y;
   }
+  /* centre the content when it fits, but let it scroll from the top when it doesn't (small screens) */
+  .overlay::before, .overlay::after { content: ''; flex: 0 0 0; margin: auto; }
+  .overlay::before { order: -99; }
+  .overlay::after { order: 99; }
+  .rotate-hint { display: none; font-size: 11px; color: #9fe8c8; }
   .overlay h1 { margin: 0; font-size: 36px; letter-spacing: 1px; }
   .overlay h2 { margin: 0; font-size: 26px; color: #ffe28a; }
   .overlay p { margin: 0; max-width: 500px; line-height: 1.5; font-size: 15px; color: #dcd; }
@@ -87,6 +102,75 @@
     cursor: pointer; font-size: 14px;
   }
   #muteBtn:hover { background: rgba(0,0,0,0.6); }
+
+  /* ---------- On-screen controls (for phones and tablets) ---------- */
+  #touchControls {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding: 10px 16px calc(44px + env(safe-area-inset-bottom));
+    pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  }
+  #touchControls.off { display: none; }
+  #touchControls > * { pointer-events: auto; touch-action: none; }
+  #dpad {
+    position: relative; width: 140px; height: 140px; border-radius: 50%;
+    background: rgba(15, 25, 15, 0.5); border: 2px solid rgba(255,255,255,0.4);
+  }
+  #dpad .dp {
+    position: absolute; color: #fff; font-size: 22px; line-height: 1; opacity: 0.6; pointer-events: none;
+    transform: translate(-50%, -50%);
+  }
+  #dpad .dp.on { opacity: 1; color: #ffcc33; }
+  #dpad .up { left: 50%; top: 17%; } #dpad .down { left: 50%; top: 83%; }
+  #dpad .left { left: 17%; top: 50%; } #dpad .right { left: 83%; top: 50%; }
+  #tcActions { display: flex; gap: 14px; align-items: flex-end; }
+  .tc-btn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    width: 68px; height: 68px; border-radius: 50%; padding: 0;
+    background: rgba(15, 25, 15, 0.55); border: 2px solid rgba(255,255,255,0.45);
+    color: #fff; font-size: 26px; line-height: 1; font-family: inherit; cursor: pointer;
+    user-select: none; -webkit-user-select: none; touch-action: none;
+  }
+  .tc-btn small { font-size: 11px; font-weight: 600; margin-top: 2px; }
+  .tc-btn.big { width: 88px; height: 88px; font-size: 32px; }
+  .tc-btn.down { background: rgba(255, 204, 51, 0.6); border-color: #ffe28a; color: #2a1f05; }
+  #controlsToggle {
+    position: fixed; left: 50%; bottom: calc(8px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+    z-index: 21; padding: 6px 14px; font-size: 13px; font-weight: 600; font-family: inherit;
+    background: rgba(15, 25, 15, 0.7); color: #fff; border: 1px solid rgba(255,255,255,0.5);
+    border-radius: 16px; cursor: pointer; white-space: nowrap;
+  }
+  #controlsToggle:hover { background: rgba(15, 25, 15, 0.9); }
+
+  /* Smaller screens: shrink the HUD and menus so they fit the scaled-down game */
+  @media (max-width: 760px), (max-height: 520px) {
+    #hud { top: 8px; left: 8px; right: 8px; font-size: 11px; }
+    #levelLabel { font-size: 11px; }
+    #suspicionBar { width: 90px; height: 10px; border-width: 1px; }
+    #guardRow, #hpRow { font-size: 10px; margin-top: 2px; }
+    #guardBar { width: 70px; height: 6px; border-width: 1px; }
+    #hpPips .pip { width: 9px; height: 7px; }
+    #livesLabel { font-size: 11px; }
+    #muteBtn { padding: 1px 6px; font-size: 12px; margin-top: 3px; }
+    .overlay { padding: 10px; gap: 8px; }
+    /* on the title screen, put the buttons above the long instructions so Start is always in view */
+    #creditsScreen .credit-line, #creditsScreen .rotate-hint { order: 1; }
+    #creditsScreen .btn-row { order: 2; }
+    #creditsScreen p { order: 3; }
+    .overlay h1 { font-size: 21px; }
+    .overlay h2 { font-size: 17px; }
+    .overlay p { font-size: 12px; line-height: 1.35; }
+    .overlay .credit-line { font-size: 14px; }
+    .overlay button { padding: 7px 16px; font-size: 14px; margin-top: 2px; }
+    #introStars, #scoreEntry label { font-size: 12px; }
+    #nameInput { font-size: 14px; padding: 5px 8px; width: 120px; }
+    .lb { font-size: 11px; min-width: 240px; }
+    .lb th, .lb td { padding: 2px 6px; }
+    #dpad { width: 118px; height: 118px; }
+    .tc-btn { width: 58px; height: 58px; font-size: 22px; }
+    .tc-btn.big { width: 74px; height: 74px; font-size: 27px; }
+  }
+  @media (orientation: portrait) and (max-width: 760px) { .rotate-hint { display: block; } }
 </style>
 </head>
 <body>
@@ -114,10 +198,12 @@
   <div id="creditsScreen" class="overlay">
     <h1>🐹 Ezra's Capybara Escape Game</h1>
     <div class="credit-line">Please play to start</div>
+    <div class="rotate-hint">📱 Tip: turn your phone sideways for a bigger game</div>
     <p>Guide the capybara through five levels: sneak out of the <b>zoo</b>,
     dash across a busy <b>road</b>, cross a quiet <b>field</b>, climb a
     snowy <b>mountain</b>, then duel <b>Darth Vader</b> for the escape pod.
-    Move with <b>WASD</b> or <b>Arrow Keys</b>.
+    Move with <b>WASD</b> or <b>Arrow Keys</b> — on a phone or tablet, use the
+    on-screen controls at the bottom (you can hide them).
     Duck into bushes, parked cars, tall grass or snowdrifts to hide — they
     block a watcher's line of sight. Press <b>Space</b> to swing your
     <b>lightsaber</b> — it does 1 damage to people (6 health) and 2 damage to
@@ -175,6 +261,18 @@
     <button id="playAgainBtn">Play Again</button>
   </div>
 </div>
+
+<!-- On-screen controls: slide a thumb on the pad to move, hold Swing / Block. Can be hidden with the button below. -->
+<div id="touchControls" class="off">
+  <div id="dpad" aria-label="Move">
+    <span class="dp up">▲</span><span class="dp down">▼</span><span class="dp left">◀</span><span class="dp right">▶</span>
+  </div>
+  <div id="tcActions">
+    <button class="tc-btn" data-key="b" aria-label="Block">🛡<small>Block</small></button>
+    <button class="tc-btn big" data-key=" " aria-label="Swing lightsaber">⚔<small>Swing</small></button>
+  </div>
+</div>
+<button id="controlsToggle" aria-label="Show or hide the on-screen controls">▲ Show controls</button>
 
 <script>
 const canvas = document.getElementById('game');
@@ -2024,6 +2122,7 @@ function loop(now) {
   last = now;
   dt = Math.min(dt, 0.05);
   animTime += dt;
+  if (state !== lastUiState) { lastUiState = state; updateControlsUI(); }   // show the pad only while playing
 
   let seenNow = false;
   if (state === 'playing') {
@@ -2178,6 +2277,101 @@ for (let i = 0; i < PLAYER_MAX_HP; i++) {      // health pips for the Vader figh
   pip.className = 'pip';
   document.getElementById('hpPips').appendChild(pip);
 }
+
+/* ---------- On-screen controls (phones and tablets) ---------- */
+// They feed the same `keys` table the keyboard does, so the game can't tell the difference.
+
+const CONTROLS_KEY = 'capybara_touch_controls';
+const touchControls = document.getElementById('touchControls');
+const controlsToggle = document.getElementById('controlsToggle');
+const dpad = document.getElementById('dpad');
+const touchHeld = new Set();                          // keys currently held down by a finger
+let controlsEnabled = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);   // on by default for phones and tablets
+try { const saved = localStorage.getItem(CONTROLS_KEY); if (saved === '1' || saved === '0') controlsEnabled = saved === '1'; } catch (e) {}
+let lastUiState = null;
+let dpadPointer = null;
+
+function pressTouchKey(k, down) {
+  if (down) { keys[k] = true; touchHeld.add(k); }
+  else if (touchHeld.has(k)) { keys[k] = false; touchHeld.delete(k); }
+}
+
+function releaseTouchKeys() {
+  touchHeld.forEach(k => { keys[k] = false; });
+  touchHeld.clear();
+  dpadPointer = null;
+  dpad.querySelectorAll('.dp').forEach(el => el.classList.remove('on'));
+  touchControls.querySelectorAll('.tc-btn').forEach(el => el.classList.remove('down'));
+}
+
+// Which of the four arrows a touch on the pad means: 8 directions, with a small dead zone in the middle.
+function updateDpad(e) {
+  const r = dpad.getBoundingClientRect();
+  const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  let up = false, down = false, left = false, right = false;
+  if (Math.hypot(dx, dy) > r.width * 0.12) {
+    const a = Math.atan2(dy, dx) * 180 / Math.PI;        // 0 = right, 90 = down
+    right = a > -67.5 && a < 67.5;
+    left = a > 112.5 || a < -112.5;
+    down = a > 22.5 && a < 157.5;
+    up = a < -22.5 && a > -157.5;
+  }
+  const want = { arrowup: up, arrowdown: down, arrowleft: left, arrowright: right };
+  Object.keys(want).forEach(k => pressTouchKey(k, want[k]));
+  dpad.querySelector('.up').classList.toggle('on', up);
+  dpad.querySelector('.down').classList.toggle('on', down);
+  dpad.querySelector('.left').classList.toggle('on', left);
+  dpad.querySelector('.right').classList.toggle('on', right);
+}
+
+function endDpad(e) {
+  if (e.pointerId !== dpadPointer) return;
+  ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].forEach(k => pressTouchKey(k, false));
+  dpad.querySelectorAll('.dp').forEach(el => el.classList.remove('on'));
+  dpadPointer = null;
+}
+
+dpad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  ensureAudio();
+  dpadPointer = e.pointerId;
+  try { dpad.setPointerCapture(e.pointerId); } catch (err) {}
+  updateDpad(e);
+});
+dpad.addEventListener('pointermove', e => { if (e.pointerId === dpadPointer) updateDpad(e); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => dpad.addEventListener(t, endDpad));
+
+touchControls.querySelectorAll('.tc-btn').forEach(btn => {
+  const key = btn.dataset.key;
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    ensureAudio();
+    try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+    pressTouchKey(key, true);
+    btn.classList.add('down');
+  });
+  const release = () => { pressTouchKey(key, false); btn.classList.remove('down'); };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, release));
+});
+touchControls.addEventListener('contextmenu', e => e.preventDefault());   // no long-press menu
+
+function updateControlsUI() {
+  const playing = state === 'playing';
+  touchControls.classList.toggle('off', !(controlsEnabled && playing));
+  controlsToggle.classList.toggle('hidden', !playing);
+  controlsToggle.textContent = controlsEnabled ? '▼ Hide controls' : '▲ Show controls';
+  controlsToggle.setAttribute('aria-pressed', String(controlsEnabled));
+  if (!(controlsEnabled && playing)) releaseTouchKeys();   // never leave a key stuck down when the pad disappears
+}
+
+function setControlsEnabled(on) {
+  controlsEnabled = on;
+  try { localStorage.setItem(CONTROLS_KEY, on ? '1' : '0'); } catch (e) {}
+  updateControlsUI();
+}
+
+controlsToggle.addEventListener('click', () => { ensureAudio(); setControlsEnabled(!controlsEnabled); controlsToggle.blur(); });
+updateControlsUI();
 
 loadLevel(0); // initial render behind the credits screen
 </script>
