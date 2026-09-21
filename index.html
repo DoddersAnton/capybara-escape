@@ -652,7 +652,7 @@ let obstacles = [], bushes = [], decor = [], hazards = [], vehicles = [], bridge
 let currentLevelIndex = 0;
 let currentLevel = level1;
 
-const player = { x:0, y:0, w:28, h:24, speed:190, facing:0, suspicion:0, moving:false, swingT:-1, cooldown:0,
+const player = { x:0, y:0, w:28, h:24, speed:380 /* 2x the original 190 */, facing:0, suspicion:0, moving:false, swingT:-1, cooldown:0,
                  blocking:false, guard:100, guardDelay:0, guardBroken:0,
                  hp:7, iframes:0, hitFlash:0, regenDelay:0, regenAcc:0 };
 
@@ -933,7 +933,7 @@ function updatePlayer(dt) {
     player.facing = Math.atan2(dy, dx);
     moveWithCollision(player, dx * speed * dt, dy * speed * dt);
     stepTimer -= dt;
-    if (stepTimer <= 0) { sfxStep(); stepTimer = 0.26; }
+    if (stepTimer <= 0) { sfxStep(); stepTimer = 0.13; }
     player.moving = true;
   } else {
     stepTimer = 0;
