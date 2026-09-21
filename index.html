@@ -211,7 +211,7 @@
     your way through traffic. Hold <b>B</b>
     to <b>block</b>: your saber bounces cars and Vader's blows, but it
     slows you down and drains your Guard bar. Vader hits for 1 damage and
-    you have 7 health.
+    you have 7 health, which regenerates while you stay out of his reach.
     You have <b>3 lives</b> — get caught three times and it's back to the start!</p>
     <div class="btn-row">
       <button id="startBtn">Start Escape</button>
@@ -384,6 +384,10 @@ function sfxVaderDefeat() {
   tone(300, 1.0, {type:'sawtooth', vol:0.2, sweepTo:35});
   noiseBurst(0.5, 0.15);
   [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.2, {type:'sine', vol:0.22, delay:1.0 + i*0.13}));
+}
+function sfxHeal() {
+  tone(660, 0.09, {type:'sine', vol:0.16});
+  tone(880, 0.13, {type:'sine', vol:0.16, delay:0.08});
 }
 function sfxPlayerHurt() {
   tone(520, 0.2, {type:'square', vol:0.18, sweepTo:120});
@@ -619,7 +623,7 @@ const level4 = {
 // A duel instead of a stealth level: the exit stays sealed behind an energy barrier until Darth Vader is defeated.
 const level5 = {
   name: "Level 5 — Vader's Lair",
-  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Defeat him to unseal the exit.",
+  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Defeat him to unseal the exit.",
   theme: 'vader',
   difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
   exitLabel: 'ESCAPE POD',
@@ -650,7 +654,7 @@ let currentLevel = level1;
 
 const player = { x:0, y:0, w:28, h:24, speed:190, facing:0, suspicion:0, moving:false, swingT:-1, cooldown:0,
                  blocking:false, guard:100, guardDelay:0, guardBroken:0,
-                 hp:7, iframes:0, hitFlash:0 };
+                 hp:7, iframes:0, hitFlash:0, regenDelay:0, regenAcc:0 };
 
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -771,7 +775,7 @@ const CAR_REACH = 42;                   // px from the capybara's centre to the 
 const GUARD_MAX = 100;
 const BLOCK_DRAIN = 12;                 // guard lost per second while holding B
 const BLOCK_HIT_COST = 30;              // guard lost each time a car is deflected
-const GUARD_REGEN = 50;                 // guard regained per second while not blocking (2x the original 25)...
+const GUARD_REGEN = 250;                // guard regained per second while not blocking (10x the original 25)...
 const GUARD_REGEN_DELAY = 0.6;          // ...starting this long after you stop
 const GUARD_BREAK_TIME = 1.5;           // can't block for this long once the guard runs out
 const BLOCK_SPEED = 0.6;                // movement speed multiplier while blocking
@@ -783,6 +787,10 @@ const CAR_STUN = 0.7;                   // seconds the deflected car crawls afte
 // saber (a warning arc shows where it will land), then strikes for 1 damage. Step out of the arc, or block,
 // and he's left wide open.
 const PLAYER_MAX_HP = 7;
+// Health only matters in the Vader fight, and only regenerates there, while he's still standing.
+const HP_REGEN_BASE = 0.1;              // health regained per second (one pip every 10 s)...
+const HP_REGEN_VADER_MULT = 5;          // ...5x faster while fighting Darth Vader (one pip every 2 s)
+const HP_REGEN_DELAY = 2.0;             // regeneration only starts this long after you last took damage
 const PLAYER_IFRAMES = 0.9;             // brief invulnerability after taking a hit
 const VADER_REACH = 66;                 // he swings at anything this close (centre to centre), and it lands if you're still this close
 const VADER_ARC = 70 * DEG;
@@ -832,6 +840,8 @@ function loadLevel(idx) {
   player.hp = PLAYER_MAX_HP;
   player.iframes = 0;
   player.hitFlash = 0;
+  player.regenDelay = 0;
+  player.regenAcc = 0;
   boss = currentLevel.boss ? makeBoss(currentLevel.boss) : null;
   bossDefeated = false;
   bossHintCd = 0;
@@ -949,6 +959,20 @@ function updatePlayer(dt) {
   }
 
   if ((keys[' '] || keys['j']) && !player.blocking && player.cooldown === 0) swingSaber();
+
+  // Health regeneration while fighting Vader: a pip comes back every 2 s once you've gone 2 s without being hit.
+  if (boss && !boss.dead && player.hp < PLAYER_MAX_HP) {
+    if (player.regenDelay > 0) player.regenDelay -= dt;
+    else {
+      player.regenAcc += HP_REGEN_BASE * HP_REGEN_VADER_MULT * dt;
+      if (player.regenAcc >= 1) {
+        player.regenAcc -= 1;
+        player.hp = Math.min(PLAYER_MAX_HP, player.hp + 1);
+        floaters.push({ x: player.x + player.w / 2, y: player.y - 16, t: 0, text: '+1', tone: 'green' });
+        sfxHeal();
+      }
+    }
+  }
 }
 
 function breakGuard() {
@@ -995,6 +1019,8 @@ function damagePlayer(n) {
   player.hp -= n;
   player.iframes = PLAYER_IFRAMES;
   player.hitFlash = 0.2;
+  player.regenDelay = HP_REGEN_DELAY;                       // being hit interrupts regeneration
+  player.regenAcc = 0;
   const pc = center(player);
   floaters.push({ x: pc.x, y: player.y - 16, t: 0, text: '-' + n });
   if (boss) {                                               // shoved back from Vader
@@ -1690,10 +1716,10 @@ function drawFloaters() {
   ctx.lineWidth = 3;
   floaters.forEach(f => {
     ctx.globalAlpha = Math.max(0, 1 - f.t / 0.7);
-    const blue = f.tone === 'blue';
-    ctx.strokeStyle = blue ? 'rgba(0,45,80,0.9)' : 'rgba(80,0,0,0.85)';
+    const blue = f.tone === 'blue', green = f.tone === 'green';
+    ctx.strokeStyle = blue ? 'rgba(0,45,80,0.9)' : green ? 'rgba(0,70,25,0.9)' : 'rgba(80,0,0,0.85)';
     ctx.strokeText(f.text, f.x, f.y);
-    ctx.fillStyle = blue ? '#dff8ff' : '#ffd6d6';
+    ctx.fillStyle = blue ? '#dff8ff' : green ? '#d4ffd8' : '#ffd6d6';
     ctx.fillText(f.text, f.x, f.y);
   });
   ctx.globalAlpha = 1;
