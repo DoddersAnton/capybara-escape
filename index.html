@@ -368,6 +368,12 @@ function sfxSaberHit() {
   tone(880, 0.09, {type:'square', vol:0.16, sweepTo:260});
   noiseBurst(0.09, 0.1);
 }
+function sfxDogBark() {                        // "woof woof"
+  tone(330, 0.09, {type:'sawtooth', vol:0.17, sweepTo:190});
+  noiseBurst(0.06, 0.09);
+  tone(290, 0.1, {type:'sawtooth', vol:0.16, delay:0.17, sweepTo:170});
+  noiseBurst(0.06, 0.08, 0.17);
+}
 function sfxSpeedPickup() {
   tone(700, 0.08, {type:'square', vol:0.16, sweepTo:1100});
   tone(1100, 0.12, {type:'sine', vol:0.16, delay:0.07});
@@ -1288,6 +1294,12 @@ function updateHazards(dt) {
   hazards.forEach(h => {
     if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
     if (h.dead) { h.deadT += dt; return; }
+    if (h.type === 'dog') {                                  // a dog barks the moment it first spots you
+      h.barkCd = Math.max(0, (h.barkCd || 0) - dt);
+      const spotted = canDetect(h);
+      if (spotted && !h.wasSpotting && h.barkCd === 0) { sfxDogBark(); h.barkCd = 1.5; }
+      h.wasSpotting = spotted;
+    }
     const dest = h.forward ? h.pts[1] : h.pts[0];
     const ddx = dest.x - h.x, ddy = dest.y - h.y;
     const dist = Math.hypot(ddx, ddy);
@@ -1711,6 +1723,81 @@ function drawZookeeper(h) {
   ctx.strokeStyle = '#7a6a35'; ctx.lineWidth = 1; ctx.stroke();
 }
 
+// A golden-brown dog seen from above, facing the way it's running: shaded coat, trotting paws, a wagging tail,
+// a red collar, floppy ears and a black nose. The head sweeps side to side as it sniffs; when it has spotted you
+// (h.alert) its ears go up, its mouth opens to bark and its tail wags fast.
+function drawDog(h) {
+  const cx = h.x + h.w / 2, cy = h.y + h.h / 2;
+  const ph = h.pts[0].x * 0.013 + h.pts[0].y * 0.007;          // so each dog moves slightly out of step
+  const alert = !!h.alert;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(h.angle);
+  ctx.scale(0.85, 0.85);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';                           // ground shadow
+  ctx.beginPath(); ctx.ellipse(1, 2, 17, 9, 0, 0, Math.PI * 2); ctx.fill();
+
+  const sw = Math.sin(animTime * 16 + ph) * 3;                  // paws trot in diagonal pairs
+  ctx.fillStyle = '#4a3320';
+  [[8, -6, sw], [8, 6, -sw], [-8, -6, -sw], [-8, 6, sw]].forEach(([lx, ly, o]) => {
+    ctx.beginPath(); ctx.ellipse(lx + o, ly, 3.3, 2.3, 0, 0, Math.PI * 2); ctx.fill();
+  });
+
+  const wag = Math.sin(animTime * (alert ? 26 : 13) + ph) * (alert ? 0.75 : 0.5);   // tail
+  const tx = -21, ty = Math.sin(wag) * 8;
+  ctx.strokeStyle = '#a06d35'; ctx.lineWidth = 3.6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-12, 0); ctx.quadraticCurveTo(-17, Math.sin(wag) * 4, tx, ty); ctx.stroke();
+  ctx.fillStyle = '#ead9b5';
+  ctx.beginPath(); ctx.arc(tx, ty, 2, 0, Math.PI * 2); ctx.fill();
+
+  const fur = ctx.createLinearGradient(0, -7, 0, 7);             // body, darker at the flanks
+  fur.addColorStop(0, '#8f5f2c'); fur.addColorStop(0.5, '#c58f4e'); fur.addColorStop(1, '#8f5f2c');
+  ctx.fillStyle = fur;
+  ctx.beginPath(); ctx.ellipse(-1, 0, 13, 6.9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(85,50,18,0.32)';                         // darker saddle along the back
+  ctx.beginPath(); ctx.ellipse(-3, 0, 8.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(70,40,15,0.3)'; ctx.lineWidth = 0.7;
+  [[-9, -4], [-5, 3.5], [-1, -3.5], [2, 3], [-7, 0.5]].forEach(([fx, fy]) => {
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + 2.6, fy + 0.4); ctx.stroke();
+  });
+
+  ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.4; ctx.lineCap = 'butt';   // collar
+  ctx.beginPath(); ctx.moveTo(8, -5.4); ctx.lineTo(8, 5.4); ctx.stroke();
+
+  ctx.save();                                                    // head
+  ctx.translate(12, 0);
+  ctx.rotate(alert ? 0 : Math.sin(animTime * 6 + ph) * 0.18);
+  ctx.fillStyle = '#b57e40';
+  ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 5.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#c99a5b';
+  ctx.beginPath(); ctx.ellipse(7, 0, 5, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+  if (alert) {                                                   // mouth open, barking
+    ctx.fillStyle = '#5a1a1a';
+    ctx.beginPath(); ctx.moveTo(6, -1.9); ctx.lineTo(12.4, 0); ctx.lineTo(6, 1.9); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f28a9a';
+    ctx.beginPath(); ctx.ellipse(8.6, 0.3, 2, 1.1, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#181010';
+  ctx.beginPath(); ctx.ellipse(11.4, 0, 1.9, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.beginPath(); ctx.arc(11, -0.8, 0.5, 0, Math.PI * 2); ctx.fill();
+  [-1, 1].forEach(s => {                                         // floppy ears (perked up when alert)
+    ctx.save();
+    ctx.translate(-1.5, s * 5.2);
+    ctx.rotate(s * (alert ? -0.35 : 0.55));
+    ctx.fillStyle = '#6e4520';
+    ctx.beginPath(); ctx.ellipse(0, 0, 4.3, 2.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#120c08';                                   // eye
+    ctx.beginPath(); ctx.arc(3.8, s * 2.6, 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.arc(4.1, s * 2.3, 0.35, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawHazardBody(h) {
   if (h.look === 'zookeeper') { drawZookeeper(h); return; }
   if (h.type === 'human') {
@@ -1725,18 +1812,7 @@ function drawHazardBody(h) {
     ctx.fillRect(h.x + 2, h.y - 1, h.w - 4, 5);
     return;
   }
-  if (h.type === 'dog') {
-    ctx.save();
-    ctx.translate(h.x + h.w/2, h.y + h.h/2);
-    ctx.rotate(h.angle);
-    ctx.fillStyle = '#8a5a2a';
-    ctx.beginPath(); ctx.ellipse(0, 0, h.w/2, h.h/2, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(h.w/2-4,-6); ctx.lineTo(h.w/2+8,0); ctx.lineTo(h.w/2-4,6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#5a3a1a';
-    ctx.beginPath(); ctx.moveTo(-h.w/2,-h.h/2); ctx.lineTo(-h.w/2-6,-h.h/2-6); ctx.lineTo(-h.w/2+4,-h.h/2); ctx.fill();
-    ctx.restore();
-    return;
-  }
+  if (h.type === 'dog') { drawDog(h); return; }
   if (h.type === 'cow') {
     ctx.save();
     ctx.translate(h.x + h.w/2, h.y + h.h/2);
@@ -1798,6 +1874,7 @@ function drawHazard(h) {
     return;
   }
   const seeing = canDetect(h);
+  h.alert = seeing;                    // lets a dog show it has spotted you (open mouth, perked ears)
   drawVisionShape(h, seeing);
   drawHazardBody(h);
   if (h.hitFlash > 0) {                // brief white flash when struck
