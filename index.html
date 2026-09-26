@@ -98,6 +98,12 @@
   .lb-note { font-size: 12px; color: #9fe8c8; }
   .hidden { display: none !important; }
   #timerLabel { text-align: right; }
+  #friendsMeter { margin-top: 4px; font-size: 13px; color: #ffd6ea; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  #friendsMeter.pop { animation: friendPop 0.5s ease-out; }
+  #friendsBar { width: 96px; height: 8px; margin: 3px 0 0 auto; background: rgba(0,0,0,0.4); border: 1px solid #fff; border-radius: 5px; overflow: hidden; }
+  #friendsFill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff8fc4, #ffd0e6); transition: width 0.3s ease-out; }
+  #friendsMeter.done #friendsFill { background: linear-gradient(90deg, #ffd23f, #fff2a8); }
+  @keyframes friendPop { 0% { transform: scale(1); } 30% { transform: scale(1.3); } 100% { transform: scale(1); } }
   #muteBtn {
     pointer-events: auto; margin-top: 6px; background: rgba(0,0,0,0.4);
     border: 1px solid #fff; color: #fff; border-radius: 6px; padding: 2px 9px;
@@ -154,6 +160,8 @@
     #hpPips .pip { width: 9px; height: 7px; }
     #livesLabel { font-size: 11px; }
     #muteBtn { padding: 1px 6px; font-size: 12px; margin-top: 3px; }
+    #friendsMeter { font-size: 11px; margin-top: 2px; }
+    #friendsBar { width: 70px; height: 6px; border-width: 1px; }
     .overlay { padding: 10px; gap: 8px; }
     /* on the title screen, put the buttons above the long instructions so Start is always in view */
     #creditsScreen .credit-line, #creditsScreen .rotate-hint { order: 1; }
@@ -195,6 +203,9 @@
     <div id="levelLabel">Level 1 — The Zoo</div>
     <div id="timerLabel">
       <div>Time: <span id="timeVal">0.0</span>s</div>
+      <div id="friendsMeter" title="Baby capybaras found">🐹 <b id="friendsCount">0</b> / <span id="friendsTotal">15</span>
+        <div id="friendsBar"><div id="friendsFill"></div></div>
+      </div>
       <button id="muteBtn" title="Toggle sound">🔊</button>
     </div>
   </div>
@@ -217,6 +228,8 @@
     to <b>block</b>: your saber bounces cars and Vader's blows, but it
     slows you down and drains your Guard bar. Vader hits for 1 damage and
     you have 7 health, which regenerates while you stay out of his reach.
+    Look for the <b>baby capybaras</b> 🐹 dotted across every level — touch
+    one to collect it and watch the meter in the top corner fill up.
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
     a few seconds of double speed (any left carries into the next level).
     You have <b>3 lives</b> — get caught
@@ -239,6 +252,7 @@
     <h2 id="introTitle">Level 2 — The Road</h2>
     <div id="introStars"></div>
     <p id="introTip"></p>
+    <p id="introFriends"></p>
     <button id="introContinueBtn">Continue</button>
   </div>
 
@@ -261,6 +275,7 @@
     zoo, the road, the field, the mountain, and every last person, reindeer
     and Sith Lord chasing you.
     Total time: <span id="winTime">0</span> seconds.</p>
+    <p id="winFriends"></p>
     <div id="scoreEntry">
       <label for="nameInput">Your name</label>
       <input id="nameInput" maxlength="12" autocomplete="off" placeholder="Capybara">
@@ -395,6 +410,14 @@ const SPOT_SOUNDS = {
 function sfxSpeedPickup() {
   tone(700, 0.08, {type:'square', vol:0.16, sweepTo:1100});
   tone(1100, 0.12, {type:'sine', vol:0.16, delay:0.07});
+}
+function sfxFriend() {
+  tone(900, 0.07, {type:'sine', vol:0.2, sweepTo:1500});
+  tone(1300, 0.07, {type:'sine', vol:0.2, delay:0.08, sweepTo:1900});
+  tone(1700, 0.12, {type:'triangle', vol:0.16, delay:0.16, sweepTo:2100});
+}
+function sfxAllFriends() {
+  [659, 784, 988, 1319, 1568].forEach((f, i) => tone(f, 0.16, {type:'sine', vol:0.22, delay:i * 0.09}));
 }
 function sfxCarHit() {
   tone(1250, 0.07, {type:'square', vol:0.15, sweepTo:700});
@@ -543,6 +566,7 @@ const level1 = {
   ],
   vehicleDefs: [],
   pickups: [{x:560, y:255, w:26, h:26, kind:'speed'}],
+  friends: [{x:56,y:118},{x:255,y:200},{x:880,y:520}],
   exitGate: EXIT,
 };
 
@@ -577,6 +601,7 @@ const level2 = {
     {y:445, dir:-1, speed:125, offset:40},
   ]),
   pickups: [{x:460, y:307, w:26, h:26, kind:'speed'}],
+  friends: [{x:450,y:585},{x:200,y:312},{x:880,y:62}],
   exitGate: EXIT,
   roadBands: {sidewalkTop:[40,160], sidewalkBottom:[480,620], median:[300,340]},
 };
@@ -626,6 +651,7 @@ const level3 = {
   ],
   vehicleDefs: [],
   pickups: [{x:610, y:415, w:26, h:26, kind:'speed'}],
+  friends: [{x:70,y:330},{x:880,y:360},{x:560,y:545}],
   exitGate: EXIT,
 };
 
@@ -667,6 +693,7 @@ const level4 = {
   ],
   vehicleDefs: [],
   pickups: [{x:460, y:190, w:26, h:26, kind:'speed'}],
+  friends: [{x:880,y:520},{x:110,y:380},{x:880,y:225}],
   exitGate: EXIT,
 };
 
@@ -693,6 +720,7 @@ const level5 = {
   hazardDefs: [],
   vehicleDefs: [],
   pickups: [{x:454, y:320, w:26, h:26, kind:'speed'}],
+  friends: [{x:80,y:110},{x:880,y:110},{x:880,y:540}],
   exitGate: EXIT,
   boss: { name:'DARTH VADER', x:449, y:200, w:30, h:46, hp:24, wake:1.4 },
 };
@@ -701,7 +729,7 @@ const levels = [level1, level2, level3, level4, level5];
 
 /* ---------- Runtime state ---------- */
 
-let obstacles = [], bushes = [], decor = [], hazards = [], vehicles = [], bridges = [], pickups = [], exitGate = EXIT;
+let obstacles = [], bushes = [], decor = [], hazards = [], vehicles = [], bridges = [], pickups = [], friends = [], exitGate = EXIT;
 let currentLevelIndex = 0;
 let currentLevel = level1;
 
@@ -913,6 +941,8 @@ function loadLevel(idx, keepBoost = false) {
   player.regenAcc = 0;
   if (!keepBoost) player.speedBoostT = 0;
   pickups = (currentLevel.pickups || []).map(p => ({...p, collected:false, respawnT:0}));
+  friends = (currentLevel.friends || []).map((f, i) => ({ id: idx + ':' + i, x: f.x, y: f.y, w: FRIEND_W, h: FRIEND_H, ph: (i * 1.7 + idx * 0.9) % 6.28, rest: (i * 2.1 + idx) % 6.28 }))
+    .filter(f => !friendsFound.has(f.id));
   boss = currentLevel.boss ? makeBoss(currentLevel.boss) : null;
   bossDefeated = false;
   bossHintCd = 0;
@@ -924,11 +954,13 @@ function loadLevel(idx, keepBoost = false) {
   animalNearState = {};
   waterfallSoundTimer = 0;
   document.getElementById('levelLabel').textContent = currentLevel.name;
+  updateFriendsHud(false);
 }
 
 function startGame() {
   document.getElementById('creditsScreen').classList.add('hidden');
   elapsed = 0;
+  friendsFound.clear();
   lives = MAX_LIVES;
   updateLivesDisplay();
   loadLevel(0);
@@ -939,6 +971,8 @@ function showLevelIntro(idx) {
   loadLevel(idx, true);                                  // a remaining speed boost carries over (paused while this screen shows)
   document.getElementById('introTitle').textContent = currentLevel.name;
   document.getElementById('introTip').textContent = currentLevel.tip;
+  const here = (currentLevel.friends || []).length, left = friends.length;
+  document.getElementById('introFriends').textContent = here ? '🐹 ' + here + ' baby capybaras are hiding here' + (left < here ? ' (' + left + ' still to find)' : '') : '';
   const stars = document.getElementById('introStars');
   stars.textContent = '';
   const label = document.createElement('b');
@@ -979,6 +1013,7 @@ function triggerCaught(msg) {
 function startOver() {
   document.getElementById('gameOverScreen').classList.add('hidden');
   elapsed = 0;
+  friendsFound.clear();
   lives = MAX_LIVES;
   updateLivesDisplay();
   loadLevel(0);
@@ -1316,6 +1351,98 @@ function updatePickups(dt) {
   });
 }
 
+/* ---------- Baby capybaras ---------- */
+// Little capybaras dotted across the levels. Touch one to collect it; the meter in the top corner counts them.
+// Ones you've found stay found until the game is over, so replaying a level after being caught doesn't lose them.
+
+const FRIEND_W = 22, FRIEND_H = 18;
+const friendsFound = new Set();
+function friendsTotal() { return levels.reduce((n, l) => n + (l.friends || []).length, 0); }
+
+function updateFriendsHud(pop) {
+  const total = friendsTotal(), n = friendsFound.size, meter = document.getElementById('friendsMeter');
+  document.getElementById('friendsCount').textContent = n;
+  document.getElementById('friendsTotal').textContent = total;
+  document.getElementById('friendsFill').style.width = (total ? n / total * 100 : 0) + '%';
+  meter.classList.toggle('done', total > 0 && n >= total);
+  if (pop) { meter.classList.remove('pop'); void meter.offsetWidth; meter.classList.add('pop'); }
+}
+
+function updateFriends(dt) {
+  for (let i = friends.length - 1; i >= 0; i--) {
+    const f = friends[i];
+    if (!rectsOverlap(player, {x: f.x - 4, y: f.y - 4, w: f.w + 8, h: f.h + 8})) continue;
+    friends.splice(i, 1);
+    friendsFound.add(f.id);
+    const cx = f.x + f.w / 2, cy = f.y + f.h / 2, all = friendsFound.size >= friendsTotal();
+    floaters.push({ x: cx, y: cy - 16, t: 0, text: all ? 'ALL FRIENDS FOUND!' : 'FRIEND FOUND!', tone: 'green' });
+    for (let k = 0; k < 7; k++) {
+      const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, sp = 40 + Math.random() * 70;
+      debris.push({ kind: 'heart', x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, life: 0.7 + Math.random() * 0.4, size: 3 + Math.random() * 2.5 });
+    }
+    all ? sfxAllFriends() : sfxFriend();
+    updateFriendsHud(true);
+  }
+}
+
+function drawHeart(x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x, y + s * 0.9);
+  ctx.bezierCurveTo(x - s * 1.6, y - s * 0.2, x - s * 0.9, y - s * 1.3, x, y - s * 0.4);
+  ctx.bezierCurveTo(x + s * 0.9, y - s * 1.3, x + s * 1.6, y - s * 0.2, x, y + s * 0.9);
+  ctx.closePath(); ctx.fill();
+}
+
+// A baby capybara: lighter, fluffier and rounder-headed than the player, with big eyes. It bobs, hops now and then,
+// and turns to watch you when you come close.
+function drawFriend(f) {
+  const t = animTime + f.ph, cx = f.x + f.w / 2, cy = f.y + f.h / 2, pc = center(player);
+  const near = Math.hypot(pc.x - cx, pc.y - cy) < 170;
+  if (f.face === undefined) f.face = f.rest;
+  f.face += normAngle((near ? Math.atan2(pc.y - cy, pc.x - cx) : f.rest + Math.sin(t * 0.5) * 0.5) - f.face) * 0.1;
+  const hop = Math.pow(Math.max(0, Math.sin(t * 2.6)), 8) * 4, bob = Math.sin(t * 5) * 0.4;
+
+  const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);                     // a soft pink glow so they're easy to spot
+  glow.addColorStop(0, 'rgba(255,170,215,0.32)'); glow.addColorStop(1, 'rgba(255,170,215,0)');
+  ctx.fillStyle = glow; ctx.fillRect(cx - 26, cy - 26, 52, 52);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(cx, cy + 3, 11 - hop * 0.6, 7 - hop * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.save();
+  ctx.translate(cx, cy - hop + bob);
+  ctx.rotate(f.face);
+  ctx.fillStyle = '#5a3d26';                                                        // tiny feet
+  [[3, -6], [3, 6], [-5, -6], [-5, 6]].forEach(([fx, fy]) => { ctx.beginPath(); ctx.ellipse(fx, fy, 2.2, 1.6, 0, 0, Math.PI * 2); ctx.fill(); });
+  const fur = ctx.createLinearGradient(0, -8, 0, 8);
+  fur.addColorStop(0, '#b98a58'); fur.addColorStop(0.5, '#deb684'); fur.addColorStop(1, '#b98a58');
+  ctx.fillStyle = fur;
+  ctx.beginPath(); ctx.ellipse(-1, 0, 9.6, 7.6, 0, 0, Math.PI * 2); ctx.fill();     // round, fluffy body
+  ctx.strokeStyle = 'rgba(90,55,25,0.45)'; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.strokeStyle = 'rgba(90,55,25,0.22)'; ctx.lineWidth = 0.5;
+  for (let i = 0; i < 9; i++) { const a = i * 0.7; ctx.beginPath(); ctx.moveTo(-3 + Math.cos(a) * 5, Math.sin(a) * 4); ctx.lineTo(-1 + Math.cos(a) * 5, 0.8 + Math.sin(a) * 4); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(255,240,205,0.25)'; ctx.beginPath(); ctx.ellipse(-2, 0, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = fur;
+  ctx.beginPath(); ctx.arc(8.5, 0, 6.4, 0, Math.PI * 2); ctx.fill();               // big round head
+  ctx.beginPath(); ctx.ellipse(12.4, 0, 4.2, 3.9, 0, 0, Math.PI * 2); ctx.fill();   // stubby snout
+  ctx.fillStyle = '#7a5236';                                                        // ears
+  [[5.6, -5.2], [5.6, 5.2]].forEach(([ex, ey]) => { ctx.beginPath(); ctx.ellipse(ex, ey, 1.9, 1.5, 0, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = '#2a1a10';                                                        // nose
+  ctx.beginPath(); ctx.ellipse(15.6, 0, 1.5, 2.3, 0, 0, Math.PI * 2); ctx.fill();
+  const blink = (t % 3.7) < 0.12;                                                   // big eyes
+  [-1, 1].forEach(sd => {
+    if (blink) { ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(9, sd * 3.8); ctx.lineTo(11.6, sd * 3.8); ctx.stroke(); }
+    else {
+      ctx.fillStyle = '#1a100a'; ctx.beginPath(); ctx.arc(10.4, sd * 3.8, 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(10.9, sd * 3.8 - 0.5, 0.55, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+  ctx.restore();
+
+  const beat = 1 + 0.18 * Math.sin(t * 4);                                          // a little heart floats above
+  ctx.fillStyle = 'rgba(255,90,150,0.95)';
+  drawHeart(cx, cy - 20 - hop + Math.sin(t * 2) * 1.6, 3.6 * beat);
+}
+
 function updateHazards(dt) {
   hazards.forEach(h => {
     if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
@@ -1420,6 +1547,10 @@ function checkWin() {
       sfxWin();
       state = 'won';
       document.getElementById('winTime').textContent = elapsed.toFixed(1);
+      const total = friendsTotal();
+      document.getElementById('winFriends').textContent = friendsFound.size >= total
+        ? '🐹 You found every baby capybara — all ' + total + '!'
+        : '🐹 You found ' + friendsFound.size + ' of ' + total + ' baby capybaras.';
       document.getElementById('winScreen').classList.remove('hidden');
       beginScoreEntry(elapsed, lives);
     }
@@ -3044,6 +3175,9 @@ function drawDebris() {
     } else if (d.kind === 'smoke') {
       ctx.fillStyle = 'rgba(70,70,70,0.55)';
       ctx.beginPath(); ctx.arc(d.x, d.y, d.size * (1 + 1.6 * k), 0, Math.PI * 2); ctx.fill();
+    } else if (d.kind === 'heart') {
+      ctx.fillStyle = 'rgba(255,90,150,0.95)';
+      drawHeart(d.x, d.y, d.size);
     } else if (d.kind === 'flash') {
       ctx.fillStyle = 'rgba(255,190,70,0.85)';
       ctx.beginPath(); ctx.arc(d.x, d.y, d.size * (0.6 + k), 0, Math.PI * 2); ctx.fill();
@@ -3642,6 +3776,7 @@ function draw(seenNow) {
   pickups.forEach(drawPickup);
   bushes.forEach(drawBush);
   decor.forEach(drawDecorItem);
+  friends.forEach(drawFriend);
   vehicles.forEach(drawVehicle);
   drawDebris();
   hazards.forEach(drawHazard);
@@ -3681,6 +3816,7 @@ function loop(now) {
     updateBoss(dt);
     updateEffects(dt);
     updatePickups(dt);
+    updateFriends(dt);
     updateVehicles(dt);
     const hiddenNow = inBush(player);
     if (hiddenNow && !wasHidden) sfxHide();
