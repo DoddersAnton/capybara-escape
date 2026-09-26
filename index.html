@@ -2459,35 +2459,264 @@ function drawCapybara(p) {
   ctx.restore();
 }
 
-function drawGroundZoo() {
-  ctx.fillStyle = '#4c9a4c'; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle = '#4a8f4a';
-  for (let i=0;i<W;i+=40) for (let j=0;j<H;j+=40) if ((i+j)%80===0) ctx.fillRect(i,j,40,40);
+/* ---------- Ground ---------- */
+// Each level's ground is painted once (with a fixed seed, so it looks the same every time) and then copied to the
+// screen every frame, so all the detail below costs nothing while playing.
+
+function makeRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-function drawGroundField() {
-  ctx.fillStyle = '#6bb552'; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle = '#66ab4d';
-  for (let i=0;i<W;i+=40) for (let j=0;j<H;j+=40) if ((i+j)%80===0) ctx.fillRect(i,j,40,40);
+const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')';
+const rgbVar = (c, v) => 'rgb(' + c.map(n => Math.max(0, Math.min(255, Math.round(n + v)))).join(',') + ')';
+
+function clipRect(g, r) { g.save(); g.beginPath(); g.rect(r.x, r.y, r.w, r.h); g.clip(); }
+
+// Soft, overlapping patches of a colour: what makes flat fills look uneven and natural.
+// bias > 1 favours the top of the area, bias < -1 favours the bottom.
+function blotches(g, rnd, r, count, color, rMin, rMax, alpha, bias) {
+  clipRect(g, r);
+  for (let i = 0; i < count; i++) {
+    const t = !bias || bias === 1 ? rnd() : bias > 0 ? Math.pow(rnd(), bias) : 1 - Math.pow(rnd(), -bias);
+    const cx = r.x + rnd() * r.w, cy = r.y + t * r.h, rad = rMin + rnd() * (rMax - rMin);
+    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    gr.addColorStop(0, rgba(color, alpha)); gr.addColorStop(1, rgba(color, 0));
+    g.fillStyle = gr; g.fillRect(cx - rad, cy - rad, rad * 2, rad * 2);
+  }
+  g.restore();
 }
 
-function drawGroundRoad() {
-  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0,0,W,H);
-  const b = currentLevel.roadBands;
-  ctx.fillStyle = '#999';
-  ctx.fillRect(0, b.sidewalkTop[0], W, b.sidewalkTop[1]-b.sidewalkTop[0]);
-  ctx.fillRect(0, b.sidewalkBottom[0], W, b.sidewalkBottom[1]-b.sidewalkBottom[0]);
-  ctx.fillStyle = '#5a9a4c';
-  ctx.fillRect(0, b.median[0], W, b.median[1]-b.median[0]);
-  ctx.strokeStyle = 'rgba(255,220,60,0.7)';
-  ctx.lineWidth = 3;
-  ctx.setLineDash([18,14]);
-  [265, 340].forEach(y => { // approx lane boundaries excluding median edges
-    ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke();
+function paintGrass(g, rnd, r, pal) {
+  g.fillStyle = pal.base; g.fillRect(r.x, r.y, r.w, r.h);
+  const patches = r.w * r.h / 8000;
+  blotches(g, rnd, r, patches, pal.dark, 30, 90, 0.32);
+  blotches(g, rnd, r, patches, pal.light, 30, 90, 0.28);
+  clipRect(g, r);
+  g.lineWidth = 1; g.lineCap = 'round';
+  [[pal.dark, 0.55], [pal.light, 0.55]].forEach(([col, a]) => {      // thousands of tiny blades, one pass per shade
+    g.strokeStyle = rgba(col, a);
+    g.beginPath();
+    for (let i = 0, n = r.w * r.h / 45; i < n; i++) {
+      const x = r.x + rnd() * r.w, y = r.y + rnd() * r.h, len = 3 + rnd() * 4, ang = -Math.PI / 2 + (rnd() - 0.5) * 1.0;
+      g.moveTo(x, y); g.lineTo(x + Math.cos(ang) * len, y + Math.sin(ang) * len);
+    }
+    g.stroke();
   });
-  [195].forEach(y => { ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke(); });
-  [445].forEach(y => { ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke(); });
-  ctx.setLineDash([]);
+  g.restore();
+}
+
+// Clumps of longer grass, fanned out from a point.
+function tufts(g, rnd, r, count, color) {
+  clipRect(g, r);
+  g.strokeStyle = rgba(color, 0.85); g.lineWidth = 1.2; g.lineCap = 'round';
+  g.beginPath();
+  for (let i = 0; i < count; i++) {
+    const x = r.x + rnd() * r.w, y = r.y + rnd() * r.h;
+    for (let k = -2; k <= 2; k++) {
+      const ang = -Math.PI / 2 + k * 0.3 + (rnd() - 0.5) * 0.2, len = 6 + rnd() * 6;
+      g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(ang) * len * 0.6 + k, y + Math.sin(ang) * len * 0.6, x + Math.cos(ang) * len + k * 1.5, y + Math.sin(ang) * len);
+    }
+  }
+  g.stroke();
+  g.restore();
+}
+
+function flowers(g, rnd, r, count, colors) {
+  for (let i = 0; i < count; i++) {
+    const x = r.x + rnd() * r.w, y = r.y + rnd() * r.h, c = colors[Math.floor(rnd() * colors.length)];
+    g.fillStyle = c;
+    for (let k = 0; k < 5; k++) { const a = k * 1.2566; g.beginPath(); g.arc(x + Math.cos(a) * 1.7, y + Math.sin(a) * 1.7, 1.3, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#f2c62e'; g.beginPath(); g.arc(x, y, 0.9, 0, Math.PI * 2); g.fill();
+  }
+}
+
+// A field of square paving slabs or flagstones with slightly different tones and dark joints.
+function paveSlabs(g, rnd, r, tw, th, base, joint, stagger) {
+  clipRect(g, r);
+  for (let row = 0, y = r.y; y < r.y + r.h; row++, y += th) {
+    const off = stagger && row % 2 ? tw / 2 : 0;
+    for (let x = r.x - off; x < r.x + r.w; x += tw) {
+      g.fillStyle = rgbVar(base, (rnd() - 0.5) * 14);
+      g.fillRect(x, y, tw, th);
+      g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(x, y, tw, 1.5);            // lit top edge of each slab
+    }
+  }
+  g.strokeStyle = joint; g.lineWidth = 1.3;
+  g.beginPath();
+  for (let row = 0, y = r.y; y <= r.y + r.h; row++, y += th) {
+    g.moveTo(r.x, y); g.lineTo(r.x + r.w, y);
+    const off = stagger && row % 2 ? tw / 2 : 0;
+    for (let x = r.x - off; x <= r.x + r.w; x += tw) { g.moveTo(x, y); g.lineTo(x, y + th); }
+  }
+  g.stroke();
+  for (let i = 0, n = r.w * r.h / 60; i < n; i++) {                                 // grit
+    g.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
+    g.fillRect(r.x + rnd() * r.w, r.y + rnd() * r.h, 1.5, 1.5);
+  }
+  g.restore();
+}
+
+function crack(g, rnd, x, y, len, color) {
+  g.strokeStyle = color; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y);
+  let a = rnd() * Math.PI * 2;
+  for (let d = 0; d < len; d += 6 + rnd() * 6) {
+    a += (rnd() - 0.5) * 1.1; x += Math.cos(a) * 7; y += Math.sin(a) * 7; g.lineTo(x, y);
+    if (rnd() < 0.18) { g.moveTo(x, y); g.lineTo(x + Math.cos(a + 1) * 9, y + Math.sin(a + 1) * 9); g.moveTo(x, y); }
+  }
+  g.stroke();
+}
+
+const FULL = { x: 0, y: 0, w: W, h: H };
+
+function paintGroundZoo(g, rnd) {
+  paintGrass(g, rnd, FULL, { base: '#4c9a4c', dark: [34, 100, 40], light: [110, 180, 80] });
+  g.fillStyle = 'rgba(255,255,255,0.045)';                                          // mown stripes
+  for (let x = 0; x < W; x += 120) g.fillRect(x, 0, 60, H);
+  tufts(g, rnd, FULL, 70, [40, 105, 45]);
+  flowers(g, rnd, FULL, 40, ['#fff', '#fff3a0', '#f7c6e0']);
+  // the visitors' path up to the gate: flagstones with a kerb
+  const path = { x: GATE_X + 30, y: 36, w: GATE_W - 60, h: 120 };
+  g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(path.x - 5, path.y, path.w + 10, path.h + 5);
+  g.fillStyle = '#8f8a7d'; g.fillRect(path.x - 4, path.y, path.w + 8, path.h + 3);
+  paveSlabs(g, rnd, path, 28, 16, [201, 191, 168], 'rgba(70,62,48,0.55)', true);
+  blotches(g, rnd, path, 6, [90, 80, 60], 20, 40, 0.18);
+}
+
+function paintGroundField(g, rnd) {
+  paintGrass(g, rnd, FULL, { base: '#6bb552', dark: [48, 122, 44], light: [150, 210, 90] });
+  blotches(g, rnd, FULL, 10, [190, 170, 70], 50, 110, 0.13);                        // sun-dried patches
+  tufts(g, rnd, FULL, 160, [40, 110, 40]);
+  flowers(g, rnd, FULL, 130, ['#fff', '#ffe25a', '#ff9ec7', '#c9a0ff', '#ff7a5c']);
+  for (let i = 0; i < 26; i++) {                                                    // little stones
+    const x = rnd() * W, y = rnd() * H, s = 2 + rnd() * 2.5;
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.beginPath(); g.ellipse(x + 1, y + 1.5, s, s * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = rgbVar([150, 148, 140], (rnd() - 0.5) * 30); g.beginPath(); g.ellipse(x, y, s, s * 0.7, 0, 0, Math.PI * 2); g.fill();
+  }
+}
+
+function paintGroundRoad(g, rnd, level) {
+  const b = level.roadBands;
+  // tarmac: dark base, worn patches, grit, cracks and manhole covers
+  g.fillStyle = '#3a3a3d'; g.fillRect(0, 0, W, H);
+  blotches(g, rnd, FULL, 70, [20, 20, 22], 25, 80, 0.30);
+  blotches(g, rnd, FULL, 60, [95, 95, 100], 25, 80, 0.16);
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.14)';
+    g.fillRect(rnd() * W, rnd() * H, 1.4, 1.4);
+  }
+  [195, 265, 375, 445].forEach(y => {                                               // tyre tracks worn into each lane
+    [-9, 9].forEach(o => { g.fillStyle = 'rgba(0,0,0,0.13)'; g.fillRect(20, y + o - 3, W - 40, 6); });
+  });
+  for (let i = 0; i < 9; i++) crack(g, rnd, 30 + rnd() * (W - 60), 165 + rnd() * 310, 40 + rnd() * 50, 'rgba(0,0,0,0.5)');
+  [[300, 228], [640, 412], [820, 230]].forEach(([x, y]) => {
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.arc(x, y + 1, 9, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#4a4a4e'; g.beginPath(); g.arc(x, y, 8, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1;
+    g.beginPath(); g.arc(x, y, 5.5, 0, Math.PI * 2); g.stroke();
+    for (let k = -4; k <= 4; k += 4) { g.beginPath(); g.moveTo(x - 6, y + k); g.lineTo(x + 6, y + k); g.stroke(); }
+  });
+
+  // pavements with slabs, and a raised kerb along the road edge
+  const top = { x: 0, y: b.sidewalkTop[0], w: W, h: b.sidewalkTop[1] - b.sidewalkTop[0] };
+  const bottom = { x: 0, y: b.sidewalkBottom[0], w: W, h: b.sidewalkBottom[1] - b.sidewalkBottom[0] };
+  [top, bottom].forEach(r => { paveSlabs(g, rnd, r, 40, 40, [163, 160, 152], 'rgba(60,58,52,0.5)', false); blotches(g, rnd, r, 14, [70, 68, 60], 25, 60, 0.16); });
+  const kerb = (y, dir) => {                                                        // dir 1: kerb below the pavement, -1: above it
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(0, dir > 0 ? y + 5 : y - 11, W, 6);
+    g.fillStyle = '#c9c6be'; g.fillRect(0, dir > 0 ? y - 1 : y - 5, W, 6);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, dir > 0 ? y + 4 : y - 5, W, 1);
+  };
+  kerb(b.sidewalkTop[1], 1);
+  kerb(b.sidewalkBottom[0], -1);
+
+  // the grassy central reservation, edged with kerbs
+  const med = { x: 0, y: b.median[0], w: W, h: b.median[1] - b.median[0] };
+  paintGrass(g, rnd, med, { base: '#5a9a4c', dark: [40, 100, 40], light: [130, 190, 90] });
+  tufts(g, rnd, med, 24, [45, 105, 45]);
+  [b.median[0], b.median[1] - 4].forEach(y => { g.fillStyle = '#b9b6ae'; g.fillRect(0, y, W, 4); g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(0, y + (y === b.median[0] ? 4 : 0), W, 1.5); });
+
+  // road markings: white dashes between lanes, white edge lines, yellow lines by the central reservation
+  const dash = (y, col, w, pattern) => { g.strokeStyle = col; g.lineWidth = w; g.setLineDash(pattern); g.beginPath(); g.moveTo(20, y); g.lineTo(W - 20, y); g.stroke(); g.setLineDash([]); };
+  dash(230, 'rgba(240,240,235,0.8)', 3, [22, 18]);
+  dash(410, 'rgba(240,240,235,0.8)', 3, [22, 18]);
+  dash(b.sidewalkTop[1] + 8, 'rgba(240,240,235,0.65)', 2, []);
+  dash(b.sidewalkBottom[0] - 9, 'rgba(240,240,235,0.65)', 2, []);
+  dash(b.median[0] - 4, 'rgba(240,200,50,0.8)', 2.5, []);
+  dash(b.median[1] + 6, 'rgba(240,200,50,0.8)', 2.5, []);
+}
+
+function paintGroundMountain(g, rnd) {
+  const grad = g.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#eef4f8'); grad.addColorStop(0.4, '#c9d6d9'); grad.addColorStop(0.75, '#a89a82'); grad.addColorStop(1, '#7a6a52');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  // rock and earth showing through, mostly lower down
+  blotches(g, rnd, FULL, 70, [96, 84, 66], 25, 75, 0.30, -1.8);
+  blotches(g, rnd, FULL, 50, [140, 130, 118], 20, 60, 0.28, -1.4);
+  blotches(g, rnd, FULL, 40, [60, 52, 42], 15, 45, 0.22, -2);
+  // snow drifts with cool shadows, mostly higher up
+  blotches(g, rnd, FULL, 60, [175, 195, 220], 30, 80, 0.25, 1.6);
+  blotches(g, rnd, FULL, 80, [255, 255, 255], 30, 90, 0.40, 1.5);
+  blotches(g, rnd, FULL, 24, [255, 255, 255], 20, 55, 0.30, -1.2);                  // snow caught in the lower crevices
+  // pebbles and scree
+  for (let i = 0; i < 170; i++) {
+    const y = H * (1 - Math.pow(rnd(), 1.5) * 0.8), x = rnd() * W, s = 1.5 + rnd() * 3;
+    g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(x + 1, y + 1.5, s, s * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = rgbVar([128, 120, 110], (rnd() - 0.5) * 50); g.beginPath(); g.ellipse(x, y, s, s * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.25)'; g.beginPath(); g.ellipse(x - s * 0.3, y - s * 0.3, s * 0.4, s * 0.25, 0, 0, Math.PI * 2); g.fill();
+  }
+  for (let i = 0; i < 12; i++) crack(g, rnd, rnd() * W, H * (0.45 + rnd() * 0.55), 40 + rnd() * 60, 'rgba(50,42,32,0.45)');
+  for (let i = 0; i < 260; i++) {                                                   // glints on the snow
+    const y = Math.pow(rnd(), 1.4) * H * 0.7;
+    g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillRect(rnd() * W, y, 1.6, 1.6);
+  }
+}
+
+function paintGroundVader(g, rnd) {
+  g.fillStyle = '#12121a'; g.fillRect(0, 0, W, H);
+  // deck plating: bevelled panels, rivets and the odd vent
+  const P = 80;
+  for (let x = 0; x < W; x += P) {
+    for (let y = 0; y < H; y += P) {
+      g.fillStyle = rgbVar([22, 22, 31], (rnd() - 0.5) * 8); g.fillRect(x, y, P, P);
+      g.fillStyle = 'rgba(170,170,220,0.12)'; g.fillRect(x, y, P, 1.5); g.fillRect(x, y, 1.5, P);
+      g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(x, y + P - 2, P, 2); g.fillRect(x + P - 2, y, 2, P);
+      g.fillStyle = 'rgba(120,120,160,0.28)';
+      [[7, 7], [P - 7, 7], [7, P - 7], [P - 7, P - 7]].forEach(([dx, dy]) => { g.beginPath(); g.arc(x + dx, y + dy, 1.6, 0, Math.PI * 2); g.fill(); });
+      if (rnd() < 0.16) {
+        g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2;
+        for (let k = 0; k < 6; k++) { g.beginPath(); g.moveTo(x + 22, y + 22 + k * 7); g.lineTo(x + P - 22, y + 22 + k * 7); g.stroke(); }
+      }
+    }
+  }
+  blotches(g, rnd, FULL, 40, [0, 0, 0], 30, 90, 0.35);                              // scuffs and grime
+  blotches(g, rnd, FULL, 20, [90, 90, 130], 25, 60, 0.07);
+  const glow = g.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, 430);
+  glow.addColorStop(0, 'rgba(190,25,25,0.24)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = glow; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(210,50,50,0.30)'; g.lineWidth = 3;
+  [70, 115].forEach(r => { g.beginPath(); g.arc(W / 2, H / 2, r, 0, Math.PI * 2); g.stroke(); });
+  g.strokeStyle = 'rgba(255,110,110,0.10)'; g.lineWidth = 8;
+  g.beginPath(); g.arc(W / 2, H / 2, 92, 0, Math.PI * 2); g.stroke();
+}
+
+const GROUND_PAINTERS = { zoo: paintGroundZoo, field: paintGroundField, road: paintGroundRoad, mountain: paintGroundMountain, vader: paintGroundVader };
+const groundCache = {};
+
+function drawGround() {
+  const theme = GROUND_PAINTERS[currentLevel.theme] ? currentLevel.theme : 'zoo';
+  let img = groundCache[theme];
+  if (!img) {
+    img = document.createElement('canvas'); img.width = W; img.height = H;
+    GROUND_PAINTERS[theme](img.getContext('2d'), makeRng(theme.length * 7919 + theme.charCodeAt(0)), currentLevel);
+    groundCache[theme] = img;
+  }
+  ctx.drawImage(img, 0, 0);
 }
 
 const GATE_STYLES = {
@@ -2510,20 +2739,6 @@ function drawExitGate() {
   ctx.font = 'bold 16px Segoe UI';
   ctx.textAlign = 'center';
   ctx.fillText(locked ? 'SEALED' : currentLevel.exitLabel, exitGate.x + exitGate.w/2, 26);
-}
-
-function drawGroundVader() {
-  ctx.fillStyle = '#12121a';
-  ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = 'rgba(120,120,170,0.10)'; ctx.lineWidth = 1;
-  for (let i = 0; i <= W; i += 40) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke(); }
-  for (let j = 0; j <= H; j += 40) { ctx.beginPath(); ctx.moveTo(0, j); ctx.lineTo(W, j); ctx.stroke(); }
-  const glow = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 430);
-  glow.addColorStop(0, 'rgba(190,25,25,0.22)');
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = 'rgba(210,50,50,0.28)'; ctx.lineWidth = 3;
-  [70, 115].forEach(r => { ctx.beginPath(); ctx.arc(W/2, H/2, r, 0, Math.PI * 2); ctx.stroke(); });
 }
 
 // The warning: a red fan on the floor showing exactly where his saber will come down.
@@ -2651,25 +2866,9 @@ function drawPickup(p) {
   ctx.restore();
 }
 
-function drawGroundMountain() {
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#e8f0f5');
-  grad.addColorStop(0.4, '#c9d6d9');
-  grad.addColorStop(0.75, '#a89a82');
-  grad.addColorStop(1, '#7a6a52');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  for (let i=0;i<W;i+=40) for (let j=0;j<H;j+=40) if ((i+j)%80===0) ctx.fillRect(i,j,40,40);
-}
-
 function draw(seenNow) {
   ctx.clearRect(0, 0, W, H);
-  if (currentLevel.theme === 'road') drawGroundRoad();
-  else if (currentLevel.theme === 'field') drawGroundField();
-  else if (currentLevel.theme === 'mountain') drawGroundMountain();
-  else if (currentLevel.theme === 'vader') drawGroundVader();
-  else drawGroundZoo();
+  drawGround();
 
   drawExitGate();
   obstacles.forEach(drawObstacle);
