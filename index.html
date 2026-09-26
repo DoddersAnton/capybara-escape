@@ -1918,30 +1918,130 @@ function drawDecorItem(t) {
   ctx.drawImage(treeSprite(kind, hash % 3), t.x - SPRITE_OX * scale, t.y - SPRITE_OY * scale, SPRITE_W * scale, SPRITE_H * scale);
 }
 
+/* ---------- Hiding places: bushes, tall grass, parked cars and snowdrifts ---------- */
+// Each is painted once for its size and look, then copied to the screen.
+
+const BUSH_PAD = 18;
+
+function paintLeafyBush(g, b, variant) {
+  const rnd = makeRng(Math.round(b.x * 13 + b.y * 7) + variant * 101), rx = b.w / 2, ry = b.h / 2, cx = BUSH_PAD + rx, cy = BUSH_PAD + ry;
+  const pal = TREE_PALETTES[variant % TREE_PALETTES.length];
+  g.fillStyle = 'rgba(0,0,0,0.28)';                                                // shadow on the ground
+  g.beginPath(); g.ellipse(cx + 4, cy + ry * 0.55, rx + 3, ry * 0.85, 0, 0, Math.PI * 2); g.fill();
+
+  const lumps = [], base = Math.min(rx, ry);
+  for (let i = 0, n = 14; i < n; i++) {                                             // a ring of leafy lumps makes the outline, so it fills the whole footprint
+    const a = i / n * Math.PI * 2 + rnd() * 0.3;
+    lumps.push({ x: cx + Math.cos(a) * rx * 0.72, y: cy + Math.sin(a) * ry * 0.68, r: base * 0.42 + rnd() * 5 });
+  }
+  for (let i = 0, n = Math.round(b.w * b.h / 260) + 4; i < n; i++) {
+    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 0.6;
+    lumps.push({ x: cx + Math.cos(a) * rx * d, y: cy + Math.sin(a) * ry * d - 2, r: base * 0.4 + rnd() * 6 });
+  }
+  lumps.sort((p, q) => p.y - q.y);                                                  // lower ones in front
+  const layer = (color, dx, dy, k) => {
+    g.fillStyle = color;
+    lumps.forEach(l => { g.beginPath(); g.arc(l.x + dx, l.y + dy, l.r * k, 0, Math.PI * 2); g.fill(); });
+  };
+  layer(pal.deep, 1, 2.5, 1);
+  layer(pal.dark, 0, 0, 0.94);
+  layer(pal.mid, -1.2, -2, 0.72);
+  layer(pal.light, -2.6, -3.6, 0.42);
+  for (let i = 0, n = Math.round(b.w * b.h / 14); i < n; i++) {                     // individual leaves, lighter toward the sun
+    const l = lumps[Math.floor(rnd() * lumps.length)], a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * l.r * 0.9;
+    const x = l.x + Math.cos(a) * d, y = l.y + Math.sin(a) * d, lit = (cx - x + cy - y) / (rx + ry) + (rnd() - 0.5) * 0.9;
+    g.fillStyle = lit > 0.35 ? pal.speckLight : lit < -0.25 ? pal.speckDark : pal.mid;
+    g.beginPath(); g.ellipse(x, y, 1.9, 1.15, rnd() * Math.PI, 0, Math.PI * 2); g.fill();
+  }
+  if (variant !== 0) {                                                              // berries or blossom on some bushes
+    const berry = variant === 1 ? '#d43a3a' : '#fff6f0';
+    for (let i = 0; i < 16; i++) {
+      const l = lumps[Math.floor(rnd() * lumps.length)], a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * l.r * 0.7;
+      const x = l.x + Math.cos(a) * d, y = l.y + Math.sin(a) * d;
+      g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.arc(x + 0.5, y + 0.7, 1.5, 0, Math.PI * 2); g.fill();
+      g.fillStyle = berry; g.beginPath(); g.arc(x, y, 1.4, 0, Math.PI * 2); g.fill();
+    }
+  }
+}
+
+function paintTallGrass(g, b, variant) {
+  const rnd = makeRng(Math.round(b.x * 11 + b.y * 5) + variant * 53), rx = b.w / 2, ry = b.h / 2, cx = BUSH_PAD + rx, cy = BUSH_PAD + ry;
+  const soil = g.createRadialGradient(cx, cy + 4, 2, cx, cy + 4, rx);
+  soil.addColorStop(0, 'rgba(30,50,15,0.4)'); soil.addColorStop(1, 'rgba(30,50,15,0)');
+  g.fillStyle = soil; g.beginPath(); g.ellipse(cx, cy + 4, rx, ry * 0.9, 0, 0, Math.PI * 2); g.fill();
+  const blades = [];
+  for (let i = 0, n = Math.round(b.w * b.h / 22); i < n; i++) {
+    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
+    blades.push({ x: cx + Math.cos(a) * rx * 0.9 * d, y: cy + Math.sin(a) * ry * 0.85 * d + 6, h: 12 + rnd() * 14 + (1 - d) * 6, lean: (rnd() - 0.5) * 9, tone: rnd() });
+  }
+  blades.sort((p, q) => p.y - q.y);                                                 // back to front
+  g.lineCap = 'round';
+  blades.forEach(bl => {
+    const grad = g.createLinearGradient(bl.x, bl.y, bl.x + bl.lean, bl.y - bl.h);
+    grad.addColorStop(0, rgbVar([52, 100, 34], (bl.tone - 0.5) * 26)); grad.addColorStop(1, rgbVar([150, 190, 70], (bl.tone - 0.5) * 50));
+    g.strokeStyle = grad; g.lineWidth = 1.3 + bl.tone * 0.9;
+    g.beginPath(); g.moveTo(bl.x, bl.y); g.quadraticCurveTo(bl.x + bl.lean * 0.2, bl.y - bl.h * 0.6, bl.x + bl.lean, bl.y - bl.h); g.stroke();
+  });
+  for (let i = 0; i < 9; i++) {                                                     // seed heads and wildflowers poking above the blades
+    const bl = blades[Math.floor(rnd() * blades.length)];
+    if (i % 3 === 0) {
+      g.fillStyle = ['#fff', '#ffe25a', '#ff9ec7'][(i / 3) | 0];
+      g.beginPath(); g.arc(bl.x + bl.lean, bl.y - bl.h - 1, 2, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#f2c62e'; g.beginPath(); g.arc(bl.x + bl.lean, bl.y - bl.h - 1, 0.8, 0, Math.PI * 2); g.fill();
+    } else {
+      g.strokeStyle = '#c8b45a'; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(bl.x + bl.lean, bl.y - bl.h); g.lineTo(bl.x + bl.lean * 1.05, bl.y - bl.h - 5); g.stroke();
+    }
+  }
+}
+
+function paintSnowdrift(g, b, variant) {
+  const rnd = makeRng(Math.round(b.x * 3 + b.y * 19) + variant * 71), rx = b.w / 2, ry = b.h / 2, cx = BUSH_PAD + rx, cy = BUSH_PAD + ry;
+  const humps = [{ x: cx, y: cy, rx: rx * 0.95, ry: ry * 0.92 }];                   // a drift is several overlapping mounds
+  for (let i = 0; i < 4; i++) humps.push({ x: cx + (rnd() - 0.5) * rx * 1.2, y: cy + (rnd() - 0.5) * ry * 0.5, rx: rx * (0.3 + rnd() * 0.3), ry: ry * (0.4 + rnd() * 0.3) });
+  g.fillStyle = 'rgba(70,90,125,0.35)';                                             // cool shadow on the ground
+  humps.forEach(h => { g.beginPath(); g.ellipse(h.x + 3, h.y + h.ry * 0.35 + 2, h.rx + 2, h.ry, 0, 0, Math.PI * 2); g.fill(); });
+  humps.forEach(h => {
+    const grad = g.createLinearGradient(h.x - h.rx * 0.6, h.y - h.ry, h.x + h.rx * 0.5, h.y + h.ry);
+    grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.55, '#eef4fa'); grad.addColorStop(1, '#bcd0e6');
+    g.fillStyle = grad; g.beginPath(); g.ellipse(h.x, h.y, h.rx, h.ry, 0, 0, Math.PI * 2); g.fill();
+  });
+  g.strokeStyle = 'rgba(150,175,208,0.55)'; g.lineWidth = 1; g.lineCap = 'round';   // wind-carved ripples
+  for (let i = 0; i < 5; i++) {
+    const y = cy - ry * 0.5 + i * ry * 0.28, x = cx - rx * 0.6 + rnd() * rx * 0.3, len = rx * (0.5 + rnd() * 0.4);
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + len / 2, y - 2.5 - rnd() * 2, x + len, y + rnd() * 2); g.stroke();
+  }
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  g.beginPath(); g.ellipse(cx - rx * 0.28, cy - ry * 0.4, rx * 0.34, ry * 0.2, -0.2, 0, Math.PI * 2); g.fill();   // sunlit crest
+  for (let i = 0; i < 26; i++) {                                                    // glitter
+    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd());
+    g.fillStyle = 'rgba(255,255,255,' + (0.5 + rnd() * 0.5).toFixed(2) + ')';
+    g.fillRect(cx + Math.cos(a) * rx * 0.85 * d, cy + Math.sin(a) * ry * 0.8 * d - 1, 1.3, 1.3);
+  }
+}
+
 function drawBush(b) {
-  if (b.style === 'car') {
-    ctx.fillStyle = '#b23a3a';
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = '#88c0e0';
-    ctx.fillRect(b.x+8, b.y+4, b.w-16, b.h/2-2);
-    ctx.strokeStyle = '#5a1c1c'; ctx.lineWidth = 2; ctx.strokeRect(b.x,b.y,b.w,b.h);
+  const hash = Math.abs(Math.round(b.x * 7 + b.y * 13)), variant = hash % 3;
+  if (b.style === 'car') {                                                          // a parked car, seen from above like the moving ones
+    ctx.save();
+    ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+    ctx.scale(b.w / 60, b.h / 32);
+    const style = CAR_STYLES[(hash * 5) % CAR_STYLES.length];
+    drawVehicle({ x: -30, y: -16, w: 60, h: 32, dir: b.x < W / 2 ? 1 : -1, hp: 10, maxHp: 10, hitFlash: 0, dead: false, parked: true, color: style.color, kind: style.kind });
+    ctx.restore();
     return;
   }
-  if (b.style === 'grass') {
-    ctx.fillStyle = 'rgba(120,150,40,0.85)';
-    ctx.beginPath(); ctx.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = 'rgba(80,100,20,0.9)'; ctx.lineWidth = 2; ctx.stroke();
-    return;
+  const paint = b.style === 'grass' ? paintTallGrass : b.style === 'snow' ? paintSnowdrift : paintLeafyBush;
+  const spr = cachedSprite('hide' + b.style + b.w + 'x' + b.h + 'v' + variant + '_' + hash, b.w + BUSH_PAD * 2, b.h + BUSH_PAD * 2, g => paint(g, b, variant));
+  ctx.save();
+  if (b.style === 'grass') {                                                        // tall grass sways in the breeze
+    const baseX = b.x + b.w / 2, baseY = b.y + b.h * 0.7;
+    ctx.translate(baseX, baseY);
+    ctx.transform(1, 0, 0.07 * Math.sin(animTime * 1.6 + b.x * 0.05), 1, 0, 0);
+    ctx.translate(-baseX, -baseY);
   }
-  if (b.style === 'snow') {
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.beginPath(); ctx.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = 'rgba(190,205,215,0.9)'; ctx.lineWidth = 2; ctx.stroke();
-    return;
-  }
-  ctx.fillStyle = 'rgba(20,70,20,0.9)';
-  ctx.beginPath(); ctx.ellipse(b.x+b.w/2, b.y+b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = 'rgba(10,40,10,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.drawImage(spr, b.x - BUSH_PAD, b.y - BUSH_PAD, b.w + BUSH_PAD * 2, b.h + BUSH_PAD * 2);
+  ctx.restore();
 }
 
 function drawVisionShape(h, seeing) {
@@ -2486,11 +2586,13 @@ function drawVehicle(v) {
   roundedRectPath(kind === 'van' ? 17 : 8, 13, 4, 3, 1); ctx.fill();
 
   // headlights (with a soft glow on the road ahead) and tail lights
-  const beam = ctx.createLinearGradient(30, 0, 46, 0);
-  beam.addColorStop(0, 'rgba(255,245,190,0.4)'); beam.addColorStop(1, 'rgba(255,245,190,0)');
-  ctx.fillStyle = beam;
-  ctx.beginPath(); ctx.moveTo(29, -10); ctx.lineTo(46, -15); ctx.lineTo(46, 15); ctx.lineTo(29, 10); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#fff8d0';
+  if (!v.parked) {
+    const beam = ctx.createLinearGradient(30, 0, 46, 0);
+    beam.addColorStop(0, 'rgba(255,245,190,0.4)'); beam.addColorStop(1, 'rgba(255,245,190,0)');
+    ctx.fillStyle = beam;
+    ctx.beginPath(); ctx.moveTo(29, -10); ctx.lineTo(46, -15); ctx.lineTo(46, 15); ctx.lineTo(29, 10); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = v.parked ? '#cfd6d8' : '#fff8d0';
   roundedRectPath(27, -11.5, 3.5, 5.5, 1.5); ctx.fill();
   roundedRectPath(27, 6, 3.5, 5.5, 1.5); ctx.fill();
   ctx.fillStyle = '#d42020';
