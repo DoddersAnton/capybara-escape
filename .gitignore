@@ -1,0 +1,4 @@
+# the leaderboard server's saved scores
+server/data/
+node_modules/
+*.log

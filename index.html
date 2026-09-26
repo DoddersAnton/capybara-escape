@@ -95,6 +95,7 @@
   .lb tr.me td { background: rgba(255,204,51,0.25); color: #fff; font-weight: 700; }
   .lb td.num, .lb th.num { text-align: right; }
   #winRank { color: #ffe28a; font-weight: 600; }
+  .lb-note { font-size: 12px; color: #9fe8c8; }
   .hidden { display: none !important; }
   #timerLabel { text-align: right; }
   #muteBtn {
@@ -230,6 +231,7 @@
     <h1>🏆 Leaderboard</h1>
     <p>Fastest escapes through all five levels.</p>
     <div id="leaderboardBoard"></div>
+    <div id="leaderboardNote" class="lb-note"></div>
     <button id="leaderboardBackBtn">Back</button>
   </div>
 
@@ -379,10 +381,16 @@ function sfxMoo() {                            // a long, low "mooo" that rises 
   tone(165, 0.7, {type:'sawtooth', vol:0.14, delay:0.32, sweepTo:100});
   tone(230, 0.9, {type:'sine', vol:0.05, delay:0.1, sweepTo:150});
 }
+function sfxReindeerSnort() {                  // a sharp, snorting huff with a low grunt behind it
+  noiseBurst(0.22, 0.16);
+  tone(105, 0.22, {type:'sawtooth', vol:0.11, sweepTo:75});
+  noiseBurst(0.12, 0.1, 0.18);
+}
 // What each animal does when it first spots you, and how long before it does it again.
 const SPOT_SOUNDS = {
   dog: { play: () => sfxDogBark(), cooldown: 1.5 },
   cow: { play: () => sfxMoo(), cooldown: 4 },
+  reindeer: { play: () => sfxReindeerSnort(), cooldown: 3 },
 };
 function sfxSpeedPickup() {
   tone(700, 0.08, {type:'square', vol:0.16, sweepTo:1100});
@@ -1993,30 +2001,104 @@ function drawCow(h) {
   ctx.restore();
 }
 
+// A reindeer seen from above, facing the way it's walking: a greyish-brown coat with a darker back, a pale rump and
+// shaggy neck ruff, slender trotting legs, and a head with a dark nose, ears and a big pair of branching antlers.
+// In the cold its breath steams. When it has spotted you (h.alert) its head comes up, its ears swing forward and
+// its tail lifts, and it snorts.
+function drawReindeer(h) {
+  const cx = h.x + h.w / 2, cy = h.y + h.h / 2;
+  const ph = h.pts[0].x * 0.009 + h.pts[0].y * 0.013;
+  const alert = !!h.alert;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(h.angle);
+  ctx.scale(0.85, 0.85);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';                             // ground shadow
+  ctx.beginPath(); ctx.ellipse(1, 3, 20, 10, 0, 0, Math.PI * 2); ctx.fill();
+
+  const sw = Math.sin(animTime * 10 + ph) * 2.6;                 // trot: diagonal pairs of legs
+  [[9, -5.5, sw], [9, 5.5, -sw], [-9, -5.5, -sw], [-9, 5.5, sw]].forEach(([lx, ly, o]) => {
+    ctx.strokeStyle = '#6a5140'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx, ly * 0.55); ctx.lineTo(lx + o, ly); ctx.stroke();
+    ctx.fillStyle = '#2b201a';
+    ctx.beginPath(); ctx.ellipse(lx + o + 1, ly, 2.4, 1.7, 0, 0, Math.PI * 2); ctx.fill();
+  });
+
+  ctx.fillStyle = '#efe9dd';                                     // short white tail, lifted when alert
+  ctx.beginPath(); ctx.ellipse(-15.5, 0, alert ? 3.4 : 2.6, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+
+  const coat = ctx.createLinearGradient(0, -8, 0, 8);            // body: darker along the back, paler at the flanks
+  coat.addColorStop(0, '#a58b6f'); coat.addColorStop(0.5, '#7c6249'); coat.addColorStop(1, '#a58b6f');
+  ctx.fillStyle = coat;
+  ctx.beginPath(); ctx.ellipse(-1, 0, 14.5, 7.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e9e2d6';                                     // pale rump patch
+  ctx.beginPath(); ctx.ellipse(-11.5, 0, 4.2, 5.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,44,32,0.28)'; ctx.lineWidth = 0.7;
+  [[-6, -3.5], [-3, 3], [0, -2.5], [3, 3.5], [-8, 1]].forEach(([fx, fy]) => {
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + 2.4, fy + 0.3); ctx.stroke();
+  });
+
+  ctx.fillStyle = '#cdbfa6';                                     // shaggy pale neck ruff
+  ctx.beginPath(); ctx.ellipse(11, 0, 6, 6.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 0.8;
+  for (let a = -1; a <= 1; a++) { ctx.beginPath(); ctx.moveTo(8, a * 3); ctx.lineTo(13.5, a * 3.6); ctx.stroke(); }
+
+  ctx.save();                                                    // head (a slight nod as it walks)
+  ctx.translate(15, 0);
+  ctx.rotate(alert ? 0 : Math.sin(animTime * 10 + ph) * 0.05);
+
+  [-1, 1].forEach(s => {                                         // antlers: a sweeping beam with branching tines
+    ctx.strokeStyle = '#a89470'; ctx.lineCap = 'round';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(1.5, s * 2.6); ctx.quadraticCurveTo(-2.5, s * 8, 3, s * 15); ctx.stroke();
+    ctx.strokeStyle = '#d9c9a3'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(1.5, s * 2.6); ctx.quadraticCurveTo(-2.5, s * 8, 3, s * 15); ctx.stroke();
+    ctx.lineWidth = 1.3;
+    [[0.6, s * 4.2, 6.4, s * 6.8],                               // brow tine, pointing forward
+     [-1.6, s * 7.4, -6.2, s * 10.2],                            // back tine
+     [-0.5, s * 10.6, 5.6, s * 11.4],                            // upper tine
+     [3, s * 15, 6.8, s * 16.2],                                 // fork at the tip
+     [3, s * 15, 0.6, s * 17.6]].forEach(([x0, y0, x1, y1]) => {
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    });
+  });
+
+  ctx.fillStyle = '#7a6049';
+  ctx.beginPath(); ctx.ellipse(3, 0, 6.6, 4.3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#cdbb9d';                                     // pale muzzle and a dark nose
+  ctx.beginPath(); ctx.ellipse(8.4, 0, 3.6, 2.9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1c1512';
+  ctx.beginPath(); ctx.ellipse(11.4, 0, 1.7, 2.1, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.arc(11, -0.8, 0.45, 0, Math.PI * 2); ctx.fill();
+  [-1, 1].forEach(s => {
+    ctx.save();                                                  // ears, pricked forward when alert
+    ctx.translate(-0.8, s * 4.4);
+    ctx.rotate(s * (alert ? 0.15 : 0.75));
+    ctx.fillStyle = '#6b5340';
+    ctx.beginPath(); ctx.ellipse(0, 0, 4, 1.9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c9a08a';
+    ctx.beginPath(); ctx.ellipse(0.3, 0, 2, 0.9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = '#150f0d';                                   // eye
+    ctx.beginPath(); ctx.arc(4.6, s * 2.6, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.arc(4.9, s * 2.3, 0.35, 0, Math.PI * 2); ctx.fill();
+  });
+
+  const puff = (animTime * 1.5 + ph) % 1;                        // a cloud of breath in the cold air
+  ctx.fillStyle = 'rgba(255,255,255,' + (0.5 * (1 - puff)).toFixed(2) + ')';
+  ctx.beginPath(); ctx.arc(12.5 + puff * 9, Math.sin(puff * 6 + ph) * 1.5, 1.4 + puff * 3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawHazardBody(h) {
   if (h.type === 'human') { drawPerson(h); return; }
   if (h.type === 'dog') { drawDog(h); return; }
   if (h.type === 'cow') { drawCow(h); return; }
-  if (h.type === 'reindeer') {
-    ctx.save();
-    ctx.translate(h.x + h.w/2, h.y + h.h/2);
-    ctx.rotate(h.angle);
-    ctx.fillStyle = '#8a6248';
-    ctx.beginPath(); ctx.ellipse(0, 2, h.w/2, h.h/2, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#6b4a34';
-    ctx.beginPath(); ctx.arc(h.w/2 - 2, -h.h/2 + 1, 6, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#5a3f2a'; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(h.w/2-2, -h.h/2-2); ctx.lineTo(h.w/2+4, -h.h/2-10);
-    ctx.moveTo(h.w/2, -h.h/2-6); ctx.lineTo(h.w/2+6, -h.h/2-6);
-    ctx.moveTo(h.w/2-5, -h.h/2-2); ctx.lineTo(h.w/2-9, -h.h/2-10);
-    ctx.moveTo(h.w/2-6, -h.h/2-6); ctx.lineTo(h.w/2-10, -h.h/2-6);
-    ctx.stroke();
-    ctx.fillStyle = '#c93a3a';
-    ctx.beginPath(); ctx.arc(h.w/2+4, -h.h/2+1, 2, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-    return;
-  }
+  if (h.type === 'reindeer') { drawReindeer(h); return; }
 }
 
 function drawHpPips(h) {
@@ -2566,7 +2648,12 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
-/* ---------- Leaderboard (saved in this browser) ---------- */
+/* ---------- Leaderboard ---------- */
+// Scores are shared with everyone if the game is being served by the leaderboard server (see server/server.js), or
+// LEADERBOARD_API below points at one. Otherwise (for example on GitHub Pages, or opening index.html from a file)
+// they're saved in this browser only. The game works out which by asking the server if it's there.
+
+const LEADERBOARD_API = null;   // null = the same website as the game. Or a server address, e.g. 'https://scores.example.com'
 
 const LB_KEY = 'capybara_leaderboard_v2';   // v2: scores are for the five-level run (v1 held four-level times)
 const LB_NAME_KEY = 'capybara_player_name';
@@ -2603,8 +2690,60 @@ function addScore(name, time, livesLeft) {
   return { rank, saved: storeScores(list), entry };
 }
 
-function renderBoard(container, limit, highlightDate) {
-  const scores = loadScores();
+/* --- where the scores live: the shared server if there is one, otherwise this browser --- */
+
+function fetchJson(url, timeoutMs, options) {
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
+  return fetch(url, Object.assign({ signal: ctl ? ctl.signal : undefined }, options))
+    .then(res => res.json().then(data => ({ ok: res.ok, status: res.status, data })))
+    .finally(() => { if (timer) clearTimeout(timer); });
+}
+
+let sharedBase = null;      // the leaderboard server's address, once we've found one
+let storeCheck = null;      // the check for a server runs once
+
+function detectSharedStore() {
+  if (storeCheck) return storeCheck;
+  let base = LEADERBOARD_API;
+  try {                                                  // ?api=https://... lets you try a server without editing the game
+    const q = new URLSearchParams(location.search).get('api');
+    if (q && /^https?:\/\//i.test(q)) base = q;
+  } catch (e) {}
+  base = (base === null ? '' : String(base)).replace(/\/+$/, '');
+  storeCheck = fetchJson(base + '/api/health', 2500)
+    .then(r => { if (r.ok && r.data && r.data.ok === true) sharedBase = base; })
+    .catch(() => {})
+    .then(() => sharedBase !== null);
+  return storeCheck;
+}
+
+async function listScores() {
+  if (await detectSharedStore()) {
+    try {
+      const r = await fetchJson(sharedBase + '/api/scores?limit=10', 5000);
+      if (r.ok && Array.isArray(r.data.scores)) return { scores: r.data.scores, shared: true };
+    } catch (e) {}
+  }
+  return { scores: loadScores(), shared: false };
+}
+
+// Send a finished run to the shared server, or keep it here if there isn't one (or it can't be reached).
+async function submitToStore(name, time, lives) {
+  if (await detectSharedStore()) {
+    try {
+      const r = await fetchJson(sharedBase + '/api/scores', 8000, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, time, lives }),
+      });
+      if (r.ok && r.data && r.data.entry) return { shared: true, saved: true, rank: r.data.rank, entry: r.data.entry, scores: r.data.scores || [] };
+      if (r.status === 429) return { retry: true };            // submitted a moment ago: let them press Save again
+    } catch (e) {}
+  }
+  const local = addScore(name, time, lives);
+  return { shared: false, saved: local.saved, rank: local.rank, entry: local.entry, scores: loadScores(), fellBack: sharedBase !== null };
+}
+
+function renderBoard(container, scores, limit, highlightDate) {
   container.textContent = '';
   if (!scores.length) {
     const p = document.createElement('p');
@@ -2644,26 +2783,50 @@ function beginScoreEntry(time, livesLeft) {
   setTimeout(() => input.focus(), 50);
 }
 
-function submitScore() {
-  if (!pendingScore) return;
+const SCORE_WHERE = { shared: '🌍 Shared leaderboard', local: '💾 Saved on this device only' };
+let submitting = false;
+
+async function submitScore() {
+  if (!pendingScore || submitting) return;
+  submitting = true;
+  const saveBtn = document.getElementById('saveScoreBtn');
+  saveBtn.disabled = true;
   const name = document.getElementById('nameInput').value.trim().slice(0, 12) || 'Capybara';
   try { localStorage.setItem(LB_NAME_KEY, name); } catch (e) {}
-  const { rank, saved, entry } = addScore(name, pendingScore.time, pendingScore.lives);
+  const rankEl = document.getElementById('winRank');
+  rankEl.textContent = 'Saving…';
+  rankEl.classList.remove('hidden');
+
+  const res = await submitToStore(name, pendingScore.time, pendingScore.lives);
+  submitting = false;
+  saveBtn.disabled = false;
+  if (res.retry) {                                          // the server asked us to wait: keep the form so they can try again
+    rankEl.textContent = 'One moment — press Save again in a few seconds.';
+    return;
+  }
   pendingScore = null;
   document.getElementById('scoreEntry').classList.add('hidden');
-  const rankEl = document.getElementById('winRank');
-  if (!saved) rankEl.textContent = "Couldn't save your score in this browser.";
-  else if (rank <= LB_WIN_ROWS) rankEl.textContent = `You placed #${rank}!`;
-  else rankEl.textContent = `You placed #${rank} (top ${LB_WIN_ROWS} shown below)`;
-  rankEl.classList.remove('hidden');
-  renderBoard(document.getElementById('winBoard'), LB_WIN_ROWS, entry.date);
+  const where = res.shared ? SCORE_WHERE.shared : (res.fellBack ? SCORE_WHERE.local + " (couldn't reach the leaderboard server)" : SCORE_WHERE.local);
+  if (!res.saved) rankEl.textContent = "Couldn't save your score in this browser.";
+  else if (res.rank <= LB_WIN_ROWS) rankEl.textContent = `You placed #${res.rank}! · ${where}`;
+  else rankEl.textContent = `You placed #${res.rank} (top ${LB_WIN_ROWS} shown below) · ${where}`;
+  renderBoard(document.getElementById('winBoard'), res.scores, LB_WIN_ROWS, res.entry.date);
 }
 
-function showLeaderboard() {
+async function showLeaderboard() {
   document.getElementById('creditsScreen').classList.add('hidden');
-  renderBoard(document.getElementById('leaderboardBoard'), 10);
+  const board = document.getElementById('leaderboardBoard'), note = document.getElementById('leaderboardNote');
+  board.textContent = '';
+  const loading = document.createElement('p');
+  loading.textContent = 'Loading…';
+  board.appendChild(loading);
+  note.textContent = '';
   document.getElementById('leaderboardScreen').classList.remove('hidden');
   state = 'leaderboard';
+  const { scores, shared } = await listScores();
+  if (state !== 'leaderboard') return;                      // they went back while it was loading
+  renderBoard(board, scores, 10);
+  note.textContent = shared ? SCORE_WHERE.shared + ' — everyone who plays on this server' : SCORE_WHERE.local;
 }
 
 function hideLeaderboard() {
@@ -2674,6 +2837,7 @@ function hideLeaderboard() {
 
 /* ---------- UI wiring ---------- */
 
+detectSharedStore();                       // find out early whether there's a leaderboard server, so the board opens quickly
 document.getElementById('leaderboardBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); showLeaderboard(); });
 document.getElementById('leaderboardBackBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); hideLeaderboard(); });
 document.getElementById('saveScoreBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); submitScore(); });

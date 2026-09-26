@@ -1,0 +1,12 @@
+{
+  "name": "capybara-escape",
+  "version": "1.0.0",
+  "description": "Ezra's Capybara Escape Game, with an optional shared-leaderboard server",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=12"
+  }
+}
