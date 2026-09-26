@@ -374,6 +374,16 @@ function sfxDogBark() {                        // "woof woof"
   tone(290, 0.1, {type:'sawtooth', vol:0.16, delay:0.17, sweepTo:170});
   noiseBurst(0.06, 0.08, 0.17);
 }
+function sfxMoo() {                            // a long, low "mooo" that rises and then falls
+  tone(115, 0.4, {type:'sawtooth', vol:0.14, sweepTo:165});
+  tone(165, 0.7, {type:'sawtooth', vol:0.14, delay:0.32, sweepTo:100});
+  tone(230, 0.9, {type:'sine', vol:0.05, delay:0.1, sweepTo:150});
+}
+// What each animal does when it first spots you, and how long before it does it again.
+const SPOT_SOUNDS = {
+  dog: { play: () => sfxDogBark(), cooldown: 1.5 },
+  cow: { play: () => sfxMoo(), cooldown: 4 },
+};
 function sfxSpeedPickup() {
   tone(700, 0.08, {type:'square', vol:0.16, sweepTo:1100});
   tone(1100, 0.12, {type:'sine', vol:0.16, delay:0.07});
@@ -538,11 +548,11 @@ const level2 = {
   ],
   decor: [{x:50,y:50},{x:910,y:50},{x:50,y:600},{x:910,y:600}],
   hazardDefs: [
-    { type:'human', mode:'cone', pts:[{x:60,y:540},{x:430,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', mode:'cone', pts:[{x:530,y:540},{x:900,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', mode:'cone', pts:[{x:60,y:100},{x:920,y:100}], speed:95, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'pedestrian', mode:'cone', pts:[{x:60,y:540},{x:430,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'pedestrian', mode:'cone', pts:[{x:530,y:540},{x:900,y:540}], speed:70, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'pedestrian', mode:'cone', pts:[{x:60,y:100},{x:920,y:100}], speed:95, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
     // patrols the right half of the grassy median, so it's no longer a safe place to rest
-    { type:'human', mode:'cone', pts:[{x:560,y:303},{x:900,y:303}], speed:80, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'pedestrian', mode:'cone', pts:[{x:560,y:303},{x:900,y:303}], speed:80, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
   ],
   vehicleDefs: makeLaneCars([
     {y:195, dir:1, speed:140, offset:0},
@@ -589,8 +599,8 @@ const level3 = {
     {x:915,y:130},{x:915,y:220},{x:915,y:310},{x:915,y:400},{x:915,y:490},
   ],
   hazardDefs: [
-    { type:'human', mode:'cone', pts:[{x:80,y:200},{x:880,y:200}], speed:80, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', mode:'cone', pts:[{x:880,y:460},{x:80,y:460}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'hiker', mode:'cone', pts:[{x:80,y:200},{x:880,y:200}], speed:80, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'hiker', mode:'cone', pts:[{x:880,y:460},{x:80,y:460}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
     { type:'dog', mode:'radius', pts:[{x:200,y:355},{x:520,y:355}], speed:120, radius:85, fillTime:0.5, w:26, h:16 },
     { type:'dog', mode:'radius', pts:[{x:700,y:520},{x:700,y:260}], speed:115, radius:85, fillTime:0.5, w:26, h:16 },
     { type:'cow', mode:'radius', pts:[{x:550,y:150},{x:550,y:280}], speed:35, radius:65, fillTime:1.3, w:34, h:26 },
@@ -1294,10 +1304,11 @@ function updateHazards(dt) {
   hazards.forEach(h => {
     if (h.hitFlash > 0) h.hitFlash = Math.max(0, h.hitFlash - dt);
     if (h.dead) { h.deadT += dt; return; }
-    if (h.type === 'dog') {                                  // a dog barks the moment it first spots you
+    const spotSound = SPOT_SOUNDS[h.type];                   // dogs bark and cows moo the moment they first spot you
+    if (spotSound) {
       h.barkCd = Math.max(0, (h.barkCd || 0) - dt);
       const spotted = canDetect(h);
-      if (spotted && !h.wasSpotting && h.barkCd === 0) { sfxDogBark(); h.barkCd = 1.5; }
+      if (spotted && !h.wasSpotting && h.barkCd === 0) { spotSound.play(); h.barkCd = spotSound.cooldown; }
       h.wasSpotting = spotted;
     }
     const dest = h.forward ? h.pts[1] : h.pts[0];
@@ -1348,6 +1359,8 @@ function canDetect(h) {
 const CATCH_MESSAGES = {
   human: 'Someone spotted you and carried you back!',
   zookeeper: 'A zookeeper spotted you and carried you back to your pen!',
+  pedestrian: 'A pedestrian spotted you and grabbed you!',
+  hiker: 'A hiker spotted you and grabbed you with their walking stick!',
   dog: 'A dog sniffed you out and started barking!',
   cow: 'A startled cow gave away your position!',
   reindeer: 'A reindeer spotted you and stamped the alarm!',
@@ -1675,52 +1688,148 @@ function drawVisionShape(h, seeing) {
   ctx.restore();
 }
 
-function drawZookeeper(h) {
-  const x = h.x, y = h.y, w = h.w, cx = x + w/2;
+// ---------- People ----------
+// One walking figure in three outfits (h.look): 'zookeeper' (khaki uniform, safari hat), 'hiker' (green jacket,
+// orange cap, backpack, walking stick) and 'pedestrian' (everyday clothes; skin, hair and shirt vary per person).
+// They swing their arms and legs as they walk, bob slightly, and face the way they're going: side-on (mirrored for
+// leftwards), or from the front / back when walking up or down. When one has spotted you it raises an arm and a "!" pops up.
+const SKIN_TONES = ['#f0c8a0', '#e0ad82', '#b57e55', '#7a5236'];
+const HAIR_COLORS = ['#3a2416', '#1c1410', '#8a5a2b', '#b9893d'];
+const SHIRT_COLORS = ['#c0392b', '#2e86c1', '#27ae60', '#8e44ad', '#e08e1f'];
 
-  // boots and green work trousers
-  ctx.fillStyle = '#4d6033';
-  ctx.fillRect(x + 1, y + 26, w - 2, 6);
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.fillRect(cx - 0.5, y + 27, 1, 5);
-  ctx.fillStyle = '#3a2a1a';
-  ctx.fillRect(x + 1, y + 31, 9, 3);
-  ctx.fillRect(x + w - 10, y + 31, 9, 3);
+function roundedRectPath(x, y, w, hgt, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + hgt - r); ctx.quadraticCurveTo(x + w, y + hgt, x + w - r, y + hgt);
+  ctx.lineTo(x + r, y + hgt); ctx.quadraticCurveTo(x, y + hgt, x, y + hgt - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
 
-  // khaki uniform shirt with sleeves and hands
-  ctx.fillStyle = '#c9b56f';
-  ctx.fillRect(x, y + 11, w, 14);
-  ctx.fillRect(x - 3, y + 12, 4, 10);
-  ctx.fillRect(x + w - 1, y + 12, 4, 10);
-  ctx.fillStyle = '#e8b98a';
-  ctx.beginPath(); ctx.arc(x - 1, y + 23.5, 2, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(x + w + 1, y + 23.5, 2, 0, Math.PI*2); ctx.fill();
+// A well-mixed number that's the same every frame for a given person (based on where they start), so people
+// don't all end up with the same skin, hair and shirt.
+function personSeed(h) {
+  let s = Math.imul(Math.floor(h.pts[0].x), 374761393) + Math.imul(Math.floor(h.pts[0].y), 668265263);
+  s = Math.imul(s ^ (s >>> 13), 1274126177);
+  return (s ^ (s >>> 16)) >>> 0;
+}
 
-  // chest pocket, yellow name badge and belt with buckle
-  ctx.strokeStyle = '#a08c4a'; ctx.lineWidth = 1;
-  ctx.strokeRect(x + 3.5, y + 14.5, 6, 5);
-  ctx.fillStyle = '#f2c230';
-  ctx.fillRect(x + w - 9, y + 15, 5, 3);
-  ctx.fillStyle = '#3a2a1a';
-  ctx.fillRect(x, y + 24, w, 2.5);
-  ctx.fillStyle = '#d4b13a';
-  ctx.fillRect(cx - 1.5, y + 24, 3, 2.5);
+function drawPerson(h) {
+  const look = h.look || 'pedestrian';
+  const seed = personSeed(h);
+  const skin = SKIN_TONES[seed % 4], hair = HAIR_COLORS[(seed >>> 3) % 4];
+  const shirt = SHIRT_COLORS[(seed >>> 6) % 5];
+  const outfit = look === 'zookeeper' ? { top: '#c9b56f', sleeve: '#b8a25e', pants: '#4d6033', shoe: '#3a2a1a' }
+               : look === 'hiker'     ? { top: '#2f7a4d', sleeve: '#286a42', pants: '#6b5a3a', shoe: '#3a2a1a' }
+               :                        { top: shirt, sleeve: shirt, pants: '#2f4a7a', shoe: '#f2f2f2' };
+  const dirx = Math.cos(h.angle), diry = Math.sin(h.angle);
+  const sideView = Math.abs(dirx) >= Math.abs(diry);
+  const back = !sideView && diry < 0;
+  const phase = animTime * 9 + (seed % 628) * 0.01;              // each person is at a different point in their stride
+  const walk = Math.sin(phase), bob = -Math.abs(Math.cos(phase)) * 1.3;
+  const alert = !!h.alert && !h.dead;
 
-  // face
-  ctx.fillStyle = '#e8b98a';
-  ctx.beginPath(); ctx.arc(cx, y + 8, 7, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#2a1a0a';
-  ctx.beginPath(); ctx.arc(cx - 2.6, y + 8.5, 0.9, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(cx + 2.6, y + 8.5, 0.9, 0, Math.PI*2); ctx.fill();
+  const circle = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+  const limb = (x0, y0, x1, y1, colour, width, dim) => {       // a leg or arm; `dim` darkens the far side
+    ctx.strokeStyle = colour; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    if (dim) { ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
+  };
+  const shoe = (x, y, dim) => {
+    ctx.fillStyle = outfit.shoe; ctx.beginPath(); ctx.ellipse(x, y, 3.8, 2.1, 0, 0, Math.PI * 2); ctx.fill();
+    if (dim) { ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.beginPath(); ctx.ellipse(x, y, 3.8, 2.1, 0, 0, Math.PI * 2); ctx.fill(); }
+  };
+  const hand = (x, y) => { ctx.fillStyle = skin; circle(x, y, 2); };
+  const hat = (hx, hy, view) => {
+    if (look === 'zookeeper') {                                // wide-brimmed safari hat with a brown band
+      ctx.fillStyle = '#c2ab62'; ctx.beginPath(); ctx.ellipse(hx, hy - 5.2, 5.4, 3.7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#5a3f1e'; ctx.fillRect(hx - 5.3, hy - 4.4, 10.6, 1.8);
+      ctx.fillStyle = '#b39b55'; ctx.beginPath(); ctx.ellipse(hx, hy - 3.2, 9.4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#7a6a35'; ctx.lineWidth = 0.9; ctx.stroke();
+    } else if (look === 'hiker') {                             // orange baseball cap
+      ctx.fillStyle = '#e0762a'; ctx.beginPath(); ctx.arc(hx, hy - 1.2, 5.4, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#c0631f';
+      if (view === 'side') { ctx.beginPath(); ctx.ellipse(hx + 5.4, hy - 1.4, 3.8, 1.2, 0, 0, Math.PI * 2); ctx.fill(); }
+      else if (view === 'front') { ctx.beginPath(); ctx.ellipse(hx, hy - 0.6, 4.6, 1.1, 0, 0, Math.PI * 2); ctx.fill(); }
+    }
+  };
 
-  // wide-brimmed safari hat with a brown band
-  ctx.fillStyle = '#c2ab62';
-  ctx.beginPath(); ctx.ellipse(cx, y + 1, 6.6, 5.2, 0, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#5a3f1e';
-  ctx.fillRect(cx - 6.4, y + 1.6, 12.8, 2);
-  ctx.fillStyle = '#b39b55';
-  ctx.beginPath(); ctx.ellipse(cx, y + 3.6, 12.5, 3.4, 0, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = '#7a6a35'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.save();
+  ctx.translate(h.x + h.w / 2, h.y + h.h);                     // origin at the feet
+  if (sideView && dirx < 0) ctx.scale(-1, 1);                  // walking left: mirror the figure
+  ctx.lineCap = 'round';
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(0, 0.5, 10, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+
+  if (sideView) {
+    const armEnd = (swing, raise) => raise ? [9, -30 + bob] : [swing * 5.5, -15.5 + bob - Math.abs(swing) * 1.2];
+    const far = armEnd(walk, false);                           // far arm and leg, behind the body
+    limb(0, -27 + bob, far[0], far[1], outfit.sleeve, 4, true); hand(far[0], far[1]);
+    limb(0, -15 + bob, -walk * 6.5, -2, outfit.pants, 5, true); shoe(-walk * 6.5 + 1.8, -1.2, true);
+    if (look === 'hiker') {                                    // backpack
+      ctx.fillStyle = '#b5541e'; roundedRectPath(-10.5, -27 + bob, 7, 15, 2.6); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(-10.5, -16 + bob, 7, 4);
+    }
+    ctx.fillStyle = outfit.top; roundedRectPath(-4.6, -28 + bob, 9.2, 14, 3.2); ctx.fill();   // torso
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; roundedRectPath(0, -28 + bob, 4.6, 14, 3); ctx.fill();
+    if (look === 'zookeeper') {
+      ctx.fillStyle = '#3a2a1a'; ctx.fillRect(-4.6, -16.2 + bob, 9.2, 2);                      // belt and buckle
+      ctx.fillStyle = '#d4b13a'; ctx.fillRect(1.6, -16.2 + bob, 2.4, 2);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(1.4, -24.5 + bob, 2.6, 1.8);                     // name badge
+    }
+    limb(0, -15 + bob, walk * 6.5, -2, outfit.pants, 5.2, false); shoe(walk * 6.5 + 1.8, -1.2, false);   // near leg
+    const near = armEnd(-walk, alert);                         // near arm: raised toward you when it has spotted you
+    limb(0, -27 + bob, near[0], near[1], outfit.sleeve, 4.2, false); hand(near[0], near[1]);
+    if (look === 'hiker') {                                    // walking stick
+      ctx.strokeStyle = '#7a5a2a'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(near[0], near[1]); ctx.lineTo(near[0] + 2.5, -0.5); ctx.stroke();
+    }
+    const hx = 1, hy = -33.6 + bob;                            // head
+    ctx.fillStyle = skin; circle(hx, hy, 5.1); circle(hx + 5, hy + 0.7, 1.3);
+    ctx.fillStyle = hair; ctx.beginPath(); ctx.arc(hx - 0.4, hy - 0.5, 5.3, 0.6 * Math.PI, 1.8 * Math.PI); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(120,70,40,0.35)'; circle(hx - 0.6, hy + 0.9, 1.3);                   // ear
+    ctx.fillStyle = '#1a120c'; circle(hx + 2.9, hy - 0.4, alert ? 1.2 : 0.9);                  // eye
+    hat(hx, hy, 'side');
+  } else {
+    const sw = walk * 1.6;                                     // walking towards or away from you
+    [[-2.7, sw], [2.7, -sw]].forEach(([lx, ls]) => {
+      const fy = -2 - Math.max(0, ls) * 1.6;
+      limb(lx, -15 + bob, lx, fy, outfit.pants, 5, false); shoe(lx, fy + 0.6, false);
+    });
+    ctx.fillStyle = outfit.top; roundedRectPath(-6, -28 + bob, 12, 14, 3.4); ctx.fill();       // torso
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; roundedRectPath(-6, -28 + bob, 6, 14, 3); ctx.fill();
+    if (look === 'zookeeper') {
+      ctx.fillStyle = '#3a2a1a'; ctx.fillRect(-6, -16.2 + bob, 12, 2);
+      ctx.fillStyle = '#d4b13a'; ctx.fillRect(-1.3, -16.2 + bob, 2.6, 2);
+      if (!back) { ctx.fillStyle = '#f2c230'; ctx.fillRect(2.4, -24.5 + bob, 2.8, 1.8); }
+    }
+    if (look === 'hiker') {
+      if (back) { ctx.fillStyle = '#b5541e'; roundedRectPath(-5.6, -27.5 + bob, 11.2, 14, 2.8); ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(-5.6, -17 + bob, 11.2, 3.5); }
+      else { ctx.strokeStyle = '#b5541e'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(-3, -28 + bob); ctx.lineTo(-3, -15 + bob); ctx.moveTo(3, -28 + bob); ctx.lineTo(3, -15 + bob); ctx.stroke(); }
+    }
+    [[-7, -sw], [7, sw]].forEach(([ax, as]) => {
+      const hy2 = -15.5 + bob + as * 1.2;
+      limb(ax * 0.85, -27 + bob, ax, hy2, outfit.sleeve, 4, false); hand(ax, hy2);
+    });
+    const hy = -33.6 + bob;                                    // head
+    ctx.fillStyle = skin; circle(0, hy, 5.3);
+    ctx.fillStyle = hair;
+    if (back) circle(0, hy, 5.4);
+    else {
+      ctx.beginPath(); ctx.arc(0, hy - 0.4, 5.4, Math.PI, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1a120c'; circle(-2, hy + 0.6, alert ? 1.2 : 0.9); circle(2, hy + 0.6, alert ? 1.2 : 0.9);
+      ctx.strokeStyle = 'rgba(120,50,40,0.7)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(-1.3, hy + 3); ctx.lineTo(1.3, hy + 3); ctx.stroke();
+    }
+    hat(0, hy, back ? 'back' : 'front');
+  }
+  ctx.restore();
+
+  if (alert) {                                                 // a "!" pops up beside the head
+    const bx = h.x + h.w / 2 + 12, by = h.y + 3 + Math.sin(animTime * 10) * 1.2;
+    ctx.font = 'bold 15px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(90,0,0,0.9)'; ctx.strokeText('!', bx, by);
+    ctx.fillStyle = '#ffdd44'; ctx.fillText('!', bx, by);
+  }
 }
 
 // A golden-brown dog seen from above, facing the way it's running: shaded coat, trotting paws, a wagging tail,
@@ -1798,35 +1907,96 @@ function drawDog(h) {
   ctx.restore();
 }
 
-function drawHazardBody(h) {
-  if (h.look === 'zookeeper') { drawZookeeper(h); return; }
-  if (h.type === 'human') {
-    ctx.fillStyle = '#2255aa';
-    ctx.fillRect(h.x, h.y + 10, h.w, h.h - 14);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(h.x + 3, h.y + h.h - 6, 6, 6);
-    ctx.fillRect(h.x + h.w - 9, h.y + h.h - 6, 6, 6);
-    ctx.fillStyle = '#e8b98a';
-    ctx.beginPath(); ctx.arc(h.x + h.w/2, h.y + 6, 8, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#553311';
-    ctx.fillRect(h.x + 2, h.y - 1, h.w - 4, 5);
-    return;
-  }
-  if (h.type === 'dog') { drawDog(h); return; }
-  if (h.type === 'cow') {
-    ctx.save();
-    ctx.translate(h.x + h.w/2, h.y + h.h/2);
-    ctx.rotate(h.angle);
-    ctx.fillStyle = '#f5f5f5';
-    ctx.beginPath(); ctx.ellipse(0, 0, h.w/2, h.h/2, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#2a2a2a';
-    ctx.beginPath(); ctx.ellipse(-h.w/4, -2, 7, 6, 0, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(h.w/5, 4, 6, 5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#f5f5f5';
-    ctx.beginPath(); ctx.arc(h.w/2, 0, 6, 0, Math.PI*2); ctx.fill();
+// A black-and-white Holstein cow seen from above, facing the way it's plodding: a big barrel body with irregular
+// patches (mirrored on the second cow so they differ), a swishing tail with a dark tuft, a proper head with a pink
+// muzzle, ears and small horns. It chews as it grazes; when it has noticed you (h.alert) its head stays up, its ears
+// swing out and its tail flicks fast, and it moos.
+function drawCow(h) {
+  const cx = h.x + h.w / 2, cy = h.y + h.h / 2;
+  const ph = h.pts[0].x * 0.011 + h.pts[0].y * 0.017;
+  const side = Math.floor(h.pts[0].x / 10) % 2 ? 1 : -1;
+  const alert = !!h.alert;
+  const ink = '#1f1d1c';
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(h.angle);
+  ctx.scale(0.75, 0.75);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';                            // ground shadow
+  ctx.beginPath(); ctx.ellipse(1, 3, 23, 15, 0, 0, Math.PI * 2); ctx.fill();
+
+  const sw = Math.sin(animTime * 5 + ph) * 2.2;                  // slow plodding hooves
+  ctx.fillStyle = '#2a2220';
+  [[10, -11, sw], [10, 11, -sw], [-11, -11, -sw], [-11, 11, sw]].forEach(([lx, ly, o]) => {
+    ctx.beginPath(); ctx.ellipse(lx + o, ly, 4.2, 2.7, 0, 0, Math.PI * 2); ctx.fill();
+  });
+
+  const flick = Math.sin(animTime * (alert ? 11 : 4) + ph);      // tail, flicking flies away
+  ctx.strokeStyle = '#e8e4dc'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-18, 0); ctx.quadraticCurveTo(-23, flick * 3, -27, flick * 7); ctx.stroke();
+  ctx.fillStyle = ink;
+  ctx.beginPath(); ctx.ellipse(-27.5, flick * 7.5, 3.3, 2.3, 0.3, 0, Math.PI * 2); ctx.fill();
+
+  const coat = ctx.createLinearGradient(0, -13, 0, 13);          // body, shaded at the flanks
+  coat.addColorStop(0, '#cfcac0'); coat.addColorStop(0.5, '#f8f6f1'); coat.addColorStop(1, '#cfcac0');
+  ctx.fillStyle = coat;
+  ctx.beginPath(); ctx.ellipse(0, 0, 19, 13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.save();                                                    // patches, kept inside the body outline
+  ctx.beginPath(); ctx.ellipse(0, 0, 19, 13, 0, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = ink;
+  ctx.beginPath(); ctx.ellipse(-8, -5 * side, 8.5, 5.8, 0.3 * side, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(5, 6 * side, 7.5, 5.2, -0.4 * side, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-16, 4 * side, 6, 4.6, 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10, -8 * side, 4.8, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(60,55,50,0.35)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0, 0, 19, 13, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,115,105,0.3)';                     // the ridge of the spine
+  ctx.beginPath(); ctx.moveTo(-15, 0); ctx.lineTo(12, 0); ctx.stroke();
+
+  ctx.fillStyle = '#f2efe8';                                     // neck
+  ctx.beginPath(); ctx.ellipse(15, 0, 7.5, 8.5, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.save();                                                    // head: nods as it grazes, held up when alert
+  ctx.translate(20, 0);
+  ctx.rotate(alert ? 0 : Math.sin(animTime * 2.2 + ph) * 0.12);
+  ctx.fillStyle = '#f6f3ec';
+  ctx.beginPath(); ctx.ellipse(4, 0, 8, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ink;                                           // dark patch over one side of the face
+  ctx.beginPath(); ctx.ellipse(3, -3.4 * side, 4.6, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.save();                                                    // pink muzzle, chewing
+  ctx.translate(11.5, 0);
+  ctx.scale(1, 1 + Math.sin(animTime * 8 + ph) * 0.07);
+  ctx.fillStyle = '#eaa7a7';
+  ctx.beginPath(); ctx.ellipse(0, 0, 4.4, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#a45a5a';
+  ctx.beginPath(); ctx.ellipse(1.6, -1.8, 0.9, 1.3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(1.6, 1.8, 0.9, 1.3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  [-1, 1].forEach(s => {
+    ctx.strokeStyle = '#efe2c2'; ctx.lineWidth = 2; ctx.lineCap = 'round';   // small horns
+    ctx.beginPath(); ctx.moveTo(2.5, s * 4.4); ctx.quadraticCurveTo(3.6, s * 6.4, 6, s * 6.8); ctx.stroke();
+    ctx.save();                                                  // ears, swung out when alert
+    ctx.translate(0, s * 6.6);
+    ctx.rotate(s * (alert ? 0.55 : 0.15));
+    ctx.fillStyle = ink;
+    ctx.beginPath(); ctx.ellipse(0, 0, 4.8, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d98f95';
+    ctx.beginPath(); ctx.ellipse(0.3, 0, 2.5, 1.2, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
-    return;
-  }
+    ctx.fillStyle = '#150f0d';                                   // eye
+    ctx.beginPath(); ctx.arc(6.4, s * 3.7, 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.arc(6.8, s * 3.4, 0.4, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawHazardBody(h) {
+  if (h.type === 'human') { drawPerson(h); return; }
+  if (h.type === 'dog') { drawDog(h); return; }
+  if (h.type === 'cow') { drawCow(h); return; }
   if (h.type === 'reindeer') {
     ctx.save();
     ctx.translate(h.x + h.w/2, h.y + h.h/2);
