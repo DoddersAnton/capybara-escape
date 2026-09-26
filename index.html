@@ -168,6 +168,7 @@
     .lb { font-size: 11px; min-width: 240px; }
     .lb th, .lb td { padding: 2px 6px; }
     #dpad { width: 118px; height: 118px; }
+    #tcActions { gap: 8px; }
     .tc-btn { width: 58px; height: 58px; font-size: 22px; }
     .tc-btn.big { width: 74px; height: 74px; font-size: 27px; }
   }
@@ -210,12 +211,14 @@
     block a watcher's line of sight. Press <b>Space</b> to swing your
     <b>lightsaber</b> — it does 1 damage to people (6 health), 2 damage to
     reindeer (4 health) and 2 damage to cars (10 health), so you can smash
-    your way through traffic. Hold <b>B</b>
+    your way through traffic. Press <b>E</b> to <b>spin 360°</b> — a whirlwind
+    that strikes everything around you (short cooldown). Hold <b>B</b>
     to <b>block</b>: your saber bounces cars and Vader's blows, but it
     slows you down and drains your Guard bar. Vader hits for 1 damage and
     you have 7 health, which regenerates while you stay out of his reach.
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
-    a few seconds of double speed. You have <b>3 lives</b> — get caught
+    a few seconds of double speed (any left carries into the next level).
+    You have <b>3 lives</b> — get caught
     three times and it's back to the start!</p>
     <div class="btn-row">
       <button id="startBtn">Start Escape</button>
@@ -274,6 +277,7 @@
   </div>
   <div id="tcActions">
     <button class="tc-btn" data-key="b" aria-label="Block">🛡<small>Block</small></button>
+    <button class="tc-btn" data-key="e" aria-label="Spin 360 degrees">🌀<small>Spin</small></button>
     <button class="tc-btn big" data-key=" " aria-label="Swing lightsaber">⚔<small>Swing</small></button>
   </div>
 </div>
@@ -355,6 +359,10 @@ function sfxBeep(freq) { tone(freq, 0.08, {type:'square', vol:0.18}); }
 function sfxSaberSwing() {
   tone(170, 0.22, {type:'sawtooth', vol:0.13, sweepTo:460});
   tone(85, 0.22, {type:'square', vol:0.05, sweepTo:230});
+}
+function sfxSpin() {
+  tone(150, 0.42, {type:'sawtooth', vol:0.13, sweepTo:520});
+  tone(75, 0.42, {type:'square', vol:0.05, sweepTo:260});
 }
 function sfxSaberHit() {
   tone(880, 0.09, {type:'square', vol:0.16, sweepTo:260});
@@ -667,7 +675,8 @@ let currentLevel = level1;
 
 const player = { x:0, y:0, w:28, h:24, speed:190, facing:0, suspicion:0, moving:false, swingT:-1, cooldown:0,
                  blocking:false, guard:100, guardDelay:0, guardBroken:0,
-                 hp:7, iframes:0, hitFlash:0, regenDelay:0, regenAcc:0, speedBoostT:0 };
+                 hp:7, iframes:0, hitFlash:0, regenDelay:0, regenAcc:0, speedBoostT:0,
+                 spinT:-1, spinPulse:0, spinCd:0 };
 
 const keys = {};
 window.addEventListener('keydown', e => {
@@ -780,6 +789,8 @@ const SABER_REACH = 54;                 // px from the capybara's centre to the 
 const SABER_ARC = 75 * DEG;             // each side of the direction the capybara is facing
 const SABER_COOLDOWN = 0.3;             // seconds between swings (hold Space to keep swinging)
 const SWING_TIME = 0.22;                // how long the swing animation lasts
+const SPIN_TIME = 0.5;                  // a full 360° spin (press E) takes this long...
+const SPIN_COOLDOWN = 1.2;              // ...and can be used again after this long
 const DEFEAT_FADE = 0.7;                // how long a defeated person takes to fade away
 // Speed pickups: a glowing bolt on the ground grants a temporary burst of speed. It reappears a while
 // after being collected, so it's a rare boost, not a permanent upgrade.
@@ -839,7 +850,9 @@ function instantiateVehicles(defs, diff) {
   return defs.map(d => ({...d, speed: d.speed * diff.speed, x:d.startX, hp: CAR_HP, maxHp: CAR_HP, dead: false, hitFlash: 0, stun: 0}));
 }
 
-function loadLevel(idx) {
+// `keepBoost` carries any remaining speed boost into the new level (used when you advance to the next level;
+// a catch or restart still clears it).
+function loadLevel(idx, keepBoost = false) {
   currentLevelIndex = idx;
   currentLevel = levels[idx];
   obstacles = currentLevel.obstacles;
@@ -855,6 +868,8 @@ function loadLevel(idx) {
   player.facing = 0;
   player.swingT = -1;
   player.cooldown = 0;
+  player.spinT = -1;
+  player.spinCd = 0;
   player.blocking = false;
   player.guard = GUARD_MAX;
   player.guardDelay = 0;
@@ -864,7 +879,7 @@ function loadLevel(idx) {
   player.hitFlash = 0;
   player.regenDelay = 0;
   player.regenAcc = 0;
-  player.speedBoostT = 0;
+  if (!keepBoost) player.speedBoostT = 0;
   pickups = (currentLevel.pickups || []).map(p => ({...p, collected:false, respawnT:0}));
   boss = currentLevel.boss ? makeBoss(currentLevel.boss) : null;
   bossDefeated = false;
@@ -889,7 +904,7 @@ function startGame() {
 }
 
 function showLevelIntro(idx) {
-  loadLevel(idx);
+  loadLevel(idx, true);                                  // a remaining speed boost carries over (paused while this screen shows)
   document.getElementById('introTitle').textContent = currentLevel.name;
   document.getElementById('introTip').textContent = currentLevel.tip;
   const stars = document.getElementById('introStars');
@@ -973,8 +988,15 @@ function updatePlayer(dt) {
     player.swingT += dt;
     if (player.swingT >= SWING_TIME) player.swingT = -1;
   }
+  if (player.spinCd > 0) player.spinCd = Math.max(0, player.spinCd - dt);
+  if (player.spinT >= 0) {                                // mid-spin: strike again halfway round, then finish
+    player.spinT += dt;
+    if (player.spinPulse === 1 && player.spinT >= SPIN_TIME / 2) { player.spinPulse = 2; saberStrike(true); }
+    if (player.spinT >= SPIN_TIME) player.spinT = -1;
+  }
   if (player.blocking) {
-    player.swingT = -1;                                   // can't swing while guarding
+    player.swingT = -1;                                   // can't swing (or spin) while guarding
+    player.spinT = -1;
     player.guard = Math.max(0, player.guard - BLOCK_DRAIN * dt);
     player.guardDelay = GUARD_REGEN_DELAY;
     if (player.guard <= 0) breakGuard();
@@ -984,7 +1006,8 @@ function updatePlayer(dt) {
     else player.guard = Math.min(GUARD_MAX, player.guard + GUARD_REGEN * dt);
   }
 
-  if ((keys[' '] || keys['j']) && !player.blocking && player.cooldown === 0) swingSaber();
+  if (keys['e'] && !player.blocking && player.spinT < 0 && player.spinCd === 0) startSpin();
+  else if ((keys[' '] || keys['j']) && !player.blocking && player.spinT < 0 && player.cooldown === 0) swingSaber();
 
   // Health regeneration while fighting Vader: a pip comes back every 2 s once you've gone 2 s without being hit.
   if (boss && !boss.dead && player.hp < PLAYER_MAX_HP) {
@@ -1139,6 +1162,22 @@ function swingSaber() {
   player.swingT = 0;
   player.cooldown = SABER_COOLDOWN;
   sfxSaberSwing();
+  saberStrike(false);
+}
+
+// The 360° spin: the capybara whirls all the way round with the saber out, striking everything within reach on
+// every side, once at the start and again halfway round. Press E (or the Spin button); it needs a moment to recover.
+function startSpin() {
+  player.spinT = 0;
+  player.spinPulse = 1;
+  player.spinCd = SPIN_COOLDOWN;
+  player.swingT = -1;
+  sfxSpin();
+  saberStrike(true);
+}
+
+// One strike of the saber. `omni` strikes in every direction instead of only in front of the capybara.
+function saberStrike(omni) {
   const pc = center(player);
   let struck = false, defeated = false, carHit = false, carBroke = false;
   hazards.forEach(h => {
@@ -1147,7 +1186,7 @@ function swingSaber() {
     const hc = center(h);
     const dx = hc.x - pc.x, dy = hc.y - pc.y;
     if (Math.hypot(dx, dy) > SABER_REACH) return;
-    if (Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
+    if (!omni && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
     h.hp -= target.damage;
     h.hitFlash = 0.15;
     floaters.push({ x: hc.x, y: h.y - 16, t: 0, text: '-' + target.damage });
@@ -1159,7 +1198,7 @@ function swingSaber() {
     const nx = Math.max(v.x, Math.min(pc.x, v.x + v.w)), ny = Math.max(v.y, Math.min(pc.y, v.y + v.h));
     const dx = nx - pc.x, dy = ny - pc.y, dist = Math.hypot(dx, dy);
     if (dist > CAR_REACH) return;
-    if (dist > 0.5 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
+    if (!omni && dist > 0.5 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
     v.hp -= SABER_CAR_DAMAGE;
     v.hitFlash = 0.15;
     floaters.push({ x: nx, y: v.y - 12, t: 0, text: '-' + SABER_CAR_DAMAGE });
@@ -1170,7 +1209,7 @@ function swingSaber() {
   let bossHit = false, bossDown = false;
   if (boss && !boss.dead) {
     const bc = center(boss), dx = bc.x - pc.x, dy = bc.y - pc.y;
-    if (Math.hypot(dx, dy) <= SABER_REACH + 8 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC) {
+    if (Math.hypot(dx, dy) <= SABER_REACH + 8 && (omni || Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC)) {
       boss.hp -= 1;
       boss.regenDelay = VADER_REGEN_DELAY;                   // being hit interrupts his healing
       boss.regenAcc = 0;
@@ -1882,8 +1921,22 @@ function drawGuardStance(p) {
   ctx.restore();
 }
 
+// How far round the capybara has turned so far during a spin (0 to a full 2π), easing in and out.
+function spinRotation(p) {
+  if (p.spinT < 0) return 0;
+  const u = Math.min(1, p.spinT / SPIN_TIME);
+  return u * u * (3 - 2 * u) * Math.PI * 2;
+}
+
 function drawSaber(p) {
   if (p.blocking) { drawGuardStance(p); return; }
+  if (p.spinT >= 0) {                                     // a glowing ring streaks behind the blade tip as it whirls
+    const trail = Math.min(spinRotation(p), 3.6), tip = 0.44;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(79,209,255,0.4)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, 0, 32, tip - trail, tip); ctx.stroke();
+    ctx.restore();
+  }
   const swinging = p.swingT >= 0;
   const u = swinging ? Math.min(1, p.swingT / SWING_TIME) : 0;
   const start = 0.95, end = -1.25;
@@ -1903,7 +1956,7 @@ function drawCapybara(p) {
   const hidden = inBush(p);
   ctx.globalAlpha = hidden ? 0.55 : 1;
   if (p.iframes > 0 && Math.floor(animTime * 20) % 2 === 0) ctx.globalAlpha *= 0.35;   // blinks while invulnerable
-  ctx.rotate(p.facing);
+  ctx.rotate(p.facing + spinRotation(p));
 
   // soft ground shadow
   ctx.fillStyle = 'rgba(0,0,0,0.2)';
