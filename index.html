@@ -1738,6 +1738,131 @@ function paintBridge(g, b) {
   });
 }
 
+/* ---------- Rocks: boulders and the mountain's rock walls ---------- */
+// Painted once per size and cached. Light comes from the top-left, so those faces are pale and the far side is dark.
+
+const ROCK_PAD = 14;
+const LIGHT_DIR = { x: -0.7, y: -0.7 };
+
+function hexRgb(hex) { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+
+// A chunky, faceted stone: an irregular outline split into planes that catch the light differently.
+function paintStone(g, rnd, cx, cy, rx, ry, base, opts) {
+  const n = 7 + Math.floor(rnd() * 3), pts = [], inner = [];
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + (rnd() - 0.5) * 0.5, k = 0.74 + rnd() * 0.26, ik = 0.36 + rnd() * 0.22;
+    pts.push({ a, x: cx + Math.cos(a) * rx * k, y: cy + Math.sin(a) * ry * k });
+    const ia = a + (rnd() - 0.5) * 0.4;                                             // the flat-ish top of the stone, nudged toward the light
+    inner.push({ x: cx - rx * 0.1 + Math.cos(ia) * rx * ik, y: cy - ry * 0.16 + Math.sin(ia) * ry * ik });
+  }
+  const outline = () => { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); };
+  for (let i = 0; i < n; i++) {                                                     // the sloping sides: brighter facing the light
+    const j = (i + 1) % n, mid = Math.atan2((pts[i].y + pts[j].y) / 2 - cy, (pts[i].x + pts[j].x) / 2 - cx);
+    const lit = Math.cos(mid) * LIGHT_DIR.x + Math.sin(mid) * LIGHT_DIR.y;
+    g.fillStyle = rgbVar(base, lit * 30 - 6 + (rnd() - 0.5) * 16);
+    g.beginPath(); g.moveTo(inner[i].x, inner[i].y); g.lineTo(inner[j].x, inner[j].y); g.lineTo(pts[j].x, pts[j].y); g.lineTo(pts[i].x, pts[i].y); g.closePath(); g.fill();
+  }
+  for (let i = 1; i < n - 1; i++) {                                                 // the top, split into a few planes of slightly different tone
+    g.fillStyle = rgbVar(base, 20 + (rnd() - 0.5) * 20);
+    g.beginPath(); g.moveTo(inner[0].x, inner[0].y); g.lineTo(inner[i].x, inner[i].y); g.lineTo(inner[i + 1].x, inner[i + 1].y); g.closePath(); g.fill();
+  }
+  g.save(); outline(); g.clip();
+  const dome = g.createRadialGradient(cx - rx * 0.35, cy - ry * 0.4, 1, cx, cy, Math.max(rx, ry));   // overall roundness
+  dome.addColorStop(0, 'rgba(255,255,255,0.22)'); dome.addColorStop(0.55, 'rgba(255,255,255,0)'); dome.addColorStop(1, 'rgba(0,0,0,0.3)');
+  g.fillStyle = dome; g.fillRect(cx - rx, cy - ry, rx * 2, ry * 2);
+  g.strokeStyle = 'rgba(0,0,0,0.2)'; g.lineWidth = 0.8;                             // edges between the planes
+  g.beginPath();
+  inner.forEach((q, i) => { const j = (i + 1) % n; g.moveTo(q.x, q.y); g.lineTo(inner[j].x, inner[j].y); g.moveTo(q.x, q.y); g.lineTo(pts[i].x, pts[i].y); });
+  g.stroke();
+  for (let i = 0, cnt = Math.round(rx * ry / 12); i < cnt; i++) {                   // grain
+    g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.18)';
+    g.fillRect(cx + (rnd() * 2 - 1) * rx, cy + (rnd() * 2 - 1) * ry, 1.3, 1.3);
+  }
+  if (opts && opts.moss) {                                                          // moss creeping over the top and lit side
+    for (let i = 0; i < 6; i++) {
+      const mx = cx + (rnd() - 0.65) * rx * 1.3, my = cy + (rnd() - 0.7) * ry * 1.1, mr = 4 + rnd() * rx * 0.3;
+      const gr = g.createRadialGradient(mx, my, 0, mx, my, mr);
+      gr.addColorStop(0, 'rgba(82,128,52,0.7)'); gr.addColorStop(1, 'rgba(82,128,52,0)');
+      g.fillStyle = gr; g.fillRect(mx - mr, my - mr, mr * 2, mr * 2);
+    }
+  }
+  if (opts && opts.crack) crack(g, rnd, cx + (rnd() - 0.5) * rx * 0.6, cy - ry * 0.5, rx * 1.1, 'rgba(25,22,18,0.4)');
+  g.restore();
+  g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(30,26,20,0.55)'; g.lineWidth = 1.4; outline(); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 1;                        // sunlit rim
+  g.beginPath(); for (let i = 0; i < n; i++) {
+    const p = pts[i], lit = Math.cos(p.a) * LIGHT_DIR.x + Math.sin(p.a) * LIGHT_DIR.y;
+    if (lit > 0.3) { const q = pts[(i + 1) % n]; g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); }
+  }
+  g.stroke();
+  return pts;
+}
+
+function paintBoulder(g, o) {
+  const rnd = makeRng(Math.round(o.x * 17 + o.y * 5)), rx = o.w / 2, ry = o.h / 2, cx = ROCK_PAD + rx, cy = ROCK_PAD + ry;
+  g.fillStyle = 'rgba(0,0,0,0.3)';                                                  // long soft shadow on the ground
+  g.beginPath(); g.ellipse(cx + 5, cy + ry * 0.45, rx + 4, ry * 0.8, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.beginPath(); g.ellipse(cx + 1, cy + ry * 0.75, rx * 0.95, ry * 0.4, 0, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 6; i++) {                                                     // chips of rock that have broken off
+    const a = rnd() * Math.PI * 2, x = cx + Math.cos(a) * (rx + 3 + rnd() * 5), y = cy + Math.sin(a) * (ry + 2 + rnd() * 4), s = 1.5 + rnd() * 2.5;
+    paintStone(g, rnd, x, y, s, s * 0.75, [128, 124, 116], null);
+  }
+  paintStone(g, rnd, cx, cy, rx * 0.97, ry * 0.95, [136, 132, 124], { moss: true, crack: true });
+  g.strokeStyle = '#3f7a34'; g.lineWidth = 1.2; g.lineCap = 'round'; g.beginPath();   // grass poking up round the base
+  for (let i = 0; i < 26; i++) {
+    const a = Math.PI * (0.05 + rnd() * 0.9), x = cx + Math.cos(a) * rx * (0.85 + rnd() * 0.2), y = cy + Math.sin(a) * ry * (0.9 + rnd() * 0.15), l = 3 + rnd() * 5;
+    g.moveTo(x, y); g.lineTo(x + (rnd() - 0.5) * 3, y - l);
+  }
+  g.stroke();
+}
+
+// A ridge of piled rock, painted lengthways (a tall wall is painted sideways and turned when drawn).
+function paintRockWall(g, len, thick, baseHex, snowy, seed) {
+  const rnd = makeRng(seed), base = hexRgb(baseHex);
+  g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(2, thick, len - 2, 8);                // shadow thrown on the ground below
+  const shade = g.createLinearGradient(0, thick, 0, thick + 9);
+  shade.addColorStop(0, 'rgba(0,0,0,0.28)'); shade.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = shade; g.fillRect(0, thick, len, 9);
+  g.fillStyle = rgbVar(base, -50); g.fillRect(0, 0, len, thick);                    // dark filler between the stones
+  const stones = [];
+  for (let x = -4; x < len; x += 9 + rnd() * 9) {
+    const layer = rnd() < 0.5 ? 0 : 1;                                              // two rows of stones, so the wall looks piled rather than tiled
+    const rx = 9 + rnd() * 8, ry = thick * (layer ? 0.33 : 0.4) + rnd() * 3;
+    stones.push({ x: x + rx * 0.6, y: layer ? thick * 0.68 : thick * 0.38, rx, ry, layer });
+  }
+  stones.sort((a, b) => a.layer - b.layer);
+  stones.forEach(s => paintStone(g, rnd, s.x, s.y, s.rx, s.ry, (() => { const v = (rnd() - 0.5) * 24; return base.map(n => n + v); })(), { crack: rnd() < 0.25 }));
+  if (snowy) {                                                                      // snow settled along the top edge
+    for (let x = 0; x < len; x += 4 + rnd() * 5) {
+      const w = 6 + rnd() * 10, h = 3 + rnd() * 3;
+      g.fillStyle = 'rgba(200,215,232,0.9)'; g.beginPath(); g.ellipse(x + w / 2, 3.2 + h * 0.35, w / 2, h * 0.75, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(x + w / 2 - 0.6, 2.6 + h * 0.2, w / 2 - 0.6, h * 0.65, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+  const edge = g.createLinearGradient(0, 0, 0, thick);                              // the wall's own lit top and dark foot
+  edge.addColorStop(0, 'rgba(255,255,255,0.10)'); edge.addColorStop(0.5, 'rgba(0,0,0,0)'); edge.addColorStop(1, 'rgba(0,0,0,0.3)');
+  g.fillStyle = edge; g.fillRect(0, 0, len, thick);
+}
+
+function drawRockWall(o) {
+  const vertical = o.h > o.w, len = vertical ? o.h : o.w, thick = vertical ? o.w : o.h;
+  const spr = cachedSprite('rockwall' + len + 'x' + thick + (o.color || ''), len, thick + 10,
+    g => paintRockWall(g, len, thick, o.color || '#6b6259', currentLevel.theme === 'mountain', len * 31 + thick));
+  if (!vertical) { ctx.drawImage(spr, o.x, o.y, len, thick + 10); return; }
+  ctx.save();
+  ctx.translate(o.x, o.y + o.h);                                                    // stand it upright, its top edge facing left
+  ctx.rotate(-Math.PI / 2);
+  ctx.drawImage(spr, 0, 0, len, thick + 10);
+  ctx.restore();
+}
+
+function drawBoulder(o) {
+  ctx.drawImage(cachedSprite('boulder' + o.w + 'x' + o.h + '_' + o.x + '_' + o.y, o.w + ROCK_PAD * 2, o.h + ROCK_PAD * 2, g => paintBoulder(g, o)),
+    o.x - ROCK_PAD, o.y - ROCK_PAD, o.w + ROCK_PAD * 2, o.h + ROCK_PAD * 2);
+}
+
 function drawObstacle(o) {
   if (o.type === 'waterfallCliff') { drawWaterfallCliff(o); return; }
   if (o.type === 'water') { drawWater(o); return; }
@@ -1762,14 +1887,7 @@ function drawObstacle(o) {
     ctx.restore();
     return;
   }
-  if (o.type === 'rock') {
-    ctx.fillStyle = '#8a8a8a';
-    ctx.beginPath();
-    ctx.ellipse(o.x+o.w/2, o.y+o.h/2, o.w/2, o.h/2, 0, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = '#5f5f5f'; ctx.lineWidth = 3; ctx.stroke();
-    return;
-  }
+  if (o.type === 'rock') { drawBoulder(o); return; }
   if (o.type === 'hay') {
     ctx.fillStyle = '#d9b64a';
     ctx.fillRect(o.x, o.y, o.w, o.h);
@@ -1778,6 +1896,7 @@ function drawObstacle(o) {
     ctx.strokeRect(o.x,o.y,o.w,o.h);
     return;
   }
+  if (o.type === 'wall' && currentLevel.theme === 'mountain') { drawRockWall(o); return; }
   if (o.type === 'wall') {
     ctx.fillStyle = o.color || '#555';
     ctx.fillRect(o.x, o.y, o.w, o.h);
