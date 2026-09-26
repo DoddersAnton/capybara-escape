@@ -207,7 +207,7 @@
       <div>Time: <span id="timeVal">0.0</span>s</div>
       <div id="friendsMeter" title="Baby capybaras found">🐹 <b id="friendsCount">0</b> / <span id="friendsTotal">15</span>
         <div id="friendsBar"><div id="friendsFill"></div></div>
-        <div id="powerRow" class="hidden">💪 Power ×<span id="powerVal">1</span></div>
+        <div id="powerRow" class="hidden">💪 +<span id="powerVal">0</span> damage</div>
       </div>
       <button id="muteBtn" title="Toggle sound">🔊</button>
     </div>
@@ -231,9 +231,10 @@
     to <b>block</b>: your saber bounces cars and Vader's blows, but it
     slows you down and drains your Guard bar. Vader hits for 1 damage and
     you have 7 health, which regenerates while you stay out of his reach.
-    Look for the <b>baby capybaras</b> 🐹 dotted across every level — touch
-    one and it follows you, and <b>each one makes you 1.5× stronger</b>
-    (your lightsaber hits that much harder). Watch the meter in the top corner.
+    Look for the <b>baby capybaras</b> 🐹 dotted across every level — they hide
+    in different places every game! Touch
+    one and it follows you, and <b>each one adds 0.2 damage to every hit</b>
+    (so your lightsaber hits a little harder). Watch the meter in the top corner.
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
     a few seconds of double speed (any left carries into the next level).
     You have <b>3 lives</b> — get caught
@@ -945,7 +946,7 @@ function loadLevel(idx, keepBoost = false) {
   player.regenAcc = 0;
   if (!keepBoost) player.speedBoostT = 0;
   pickups = (currentLevel.pickups || []).map(p => ({...p, collected:false, respawnT:0}));
-  friends = (currentLevel.friends || []).map((f, i) => ({ id: idx + ':' + i, x: f.x, y: f.y, w: FRIEND_W, h: FRIEND_H, ph: (i * 1.7 + idx * 0.9) % 6.28, rest: (i * 2.1 + idx) % 6.28 }))
+  friends = (friendSpots[idx] || currentLevel.friends || []).map((f, i) => ({ id: idx + ':' + i, x: f.x, y: f.y, w: FRIEND_W, h: FRIEND_H, ph: (i * 1.7 + idx * 0.9) % 6.28, rest: (i * 2.1 + idx) % 6.28 }))
     .filter(f => !friendsFound.has(f.id));
   boss = currentLevel.boss ? makeBoss(currentLevel.boss) : null;
   bossDefeated = false;
@@ -966,6 +967,7 @@ function startGame() {
   document.getElementById('creditsScreen').classList.add('hidden');
   elapsed = 0;
   friendsFound.clear();
+  rollFriendSpots();
   lives = MAX_LIVES;
   updateLivesDisplay();
   loadLevel(0);
@@ -1019,6 +1021,7 @@ function startOver() {
   document.getElementById('gameOverScreen').classList.add('hidden');
   elapsed = 0;
   friendsFound.clear();
+  rollFriendSpots();
   lives = MAX_LIVES;
   updateLivesDisplay();
   loadLevel(0);
@@ -1117,7 +1120,7 @@ function deflectCar(v) {
   const pc = center(player);
   v.x -= v.dir * CAR_KNOCKBACK;
   v.stun = CAR_STUN;
-  v.hp -= BLOCK_CAR_DAMAGE * powerMult();
+  v.hp -= BLOCK_CAR_DAMAGE + damageBonus();
   v.hitFlash = 0.15;
   player.guard = Math.max(0, player.guard - BLOCK_HIT_COST);
   player.guardDelay = GUARD_REGEN_DELAY;
@@ -1259,7 +1262,7 @@ function saberStrike(omni) {
     const dx = hc.x - pc.x, dy = hc.y - pc.y;
     if (Math.hypot(dx, dy) > SABER_REACH) return;
     if (!omni && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
-    const dmg = target.damage * powerMult();
+    const dmg = target.damage + damageBonus();
     h.hp -= dmg;
     h.hitFlash = 0.15;
     floaters.push({ x: hc.x, y: h.y - 16, t: 0, text: '-' + fmtDamage(dmg) });
@@ -1272,7 +1275,7 @@ function saberStrike(omni) {
     const dx = nx - pc.x, dy = ny - pc.y, dist = Math.hypot(dx, dy);
     if (dist > CAR_REACH) return;
     if (!omni && dist > 0.5 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
-    const carDmg = SABER_CAR_DAMAGE * powerMult();
+    const carDmg = SABER_CAR_DAMAGE + damageBonus();
     v.hp -= carDmg;
     v.hitFlash = 0.15;
     floaters.push({ x: nx, y: v.y - 12, t: 0, text: '-' + fmtDamage(carDmg) });
@@ -1284,7 +1287,7 @@ function saberStrike(omni) {
   if (boss && !boss.dead) {
     const bc = center(boss), dx = bc.x - pc.x, dy = bc.y - pc.y;
     if (Math.hypot(dx, dy) <= SABER_REACH + 8 && (omni || Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC)) {
-      const bossDmg = powerMult();
+      const bossDmg = 1 + damageBonus();
       boss.hp -= bossDmg;
       boss.regenDelay = VADER_REGEN_DELAY;                   // being hit interrupts his healing
       boss.regenAcc = 0;
@@ -1364,11 +1367,68 @@ function updatePickups(dt) {
 // Ones you've found stay found until the game is over, so replaying a level after being caught doesn't lose them.
 
 const FRIEND_W = 22, FRIEND_H = 18;
-const POWER_PER_FRIEND = 1.5;           // each baby capybara that follows you multiplies your strength by this
+const DAMAGE_PER_FRIEND = 0.2;          // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
-function powerMult() { return Math.pow(POWER_PER_FRIEND, friendsFound.size); }
+function damageBonus() { return DAMAGE_PER_FRIEND * friendsFound.size; }
 function fmtDamage(n) { return String(Math.round(n * 10) / 10); }
 function friendsTotal() { return levels.reduce((n, l) => n + (l.friends || []).length, 0); }
+
+// Where the babies hide is decided afresh every game: a handful of random spots per level that you can actually
+// walk to, kept clear of walls, water, bushes, roads and each other. (The spots written into each level are only a
+// fallback.) They're rolled once per game, so replaying a level after being caught puts them in the same places.
+let friendSpots = [];
+const reachCache = new Map();
+const REACH_STEP = 4;
+
+// Every spot the capybara can stand on, starting from where the level begins (a flood fill around the obstacles).
+function reachableFrom(level) {
+  if (reachCache.has(level)) return reachCache.get(level);
+  const cols = Math.floor((W - player.w) / REACH_STEP) + 1, rows = Math.floor((H - player.h) / REACH_STEP) + 1;
+  const grid = new Uint8Array(cols * rows), solids = level.obstacles;
+  const free = (gx, gy) => !collidesAny({ x: gx * REACH_STEP, y: gy * REACH_STEP, w: player.w, h: player.h }, solids);
+  const stack = [[Math.round(level.playerStart.x / REACH_STEP), Math.round(level.playerStart.y / REACH_STEP)]];
+  while (stack.length) {
+    const [gx, gy] = stack.pop();
+    if (gx < 0 || gy < 0 || gx >= cols || gy >= rows || grid[gy * cols + gx] || !free(gx, gy)) continue;
+    grid[gy * cols + gx] = 1;
+    stack.push([gx + 1, gy], [gx - 1, gy], [gx, gy + 1], [gx, gy - 1]);
+  }
+  const reach = { grid, cols, rows };
+  reachCache.set(level, reach);
+  return reach;
+}
+
+function canReachRect(reach, r) {                        // could the capybara stand somewhere touching this rectangle?
+  for (let x = r.x - player.w; x <= r.x + r.w; x += REACH_STEP) {
+    for (let y = r.y - player.h; y <= r.y + r.h; y += REACH_STEP) {
+      const gx = Math.round(x / REACH_STEP), gy = Math.round(y / REACH_STEP);
+      if (gx >= 0 && gy >= 0 && gx < reach.cols && gy < reach.rows && reach.grid[gy * reach.cols + gx]) return true;
+    }
+  }
+  return false;
+}
+
+function pickFriendSpots(level) {
+  const want = (level.friends || []).length, reach = reachableFrom(level), spots = [];
+  const near = (a, b, d) => Math.hypot(a.x - b.x, a.y - b.y) < d;
+  const roadBands = level.theme === 'road' && level.roadBands ? [level.roadBands.sidewalkTop, level.roadBands.median, level.roadBands.sidewalkBottom] : null;
+  for (let tries = 0; spots.length < want && tries < 1500; tries++) {
+    const r = { x: Math.round(40 + Math.random() * (W - 80 - FRIEND_W)), y: Math.round(50 + Math.random() * (H - 100 - FRIEND_H)), w: FRIEND_W, h: FRIEND_H };
+    const pad = { x: r.x - 8, y: r.y - 8, w: r.w + 16, h: r.h + 16 };
+    if (collidesAny(pad, level.obstacles) || (level.bushes || []).some(b => rectsOverlap(pad, b))) continue;
+    if (roadBands && !roadBands.some(b => r.y >= b[0] + 2 && r.y + r.h <= b[1] - 2)) continue;   // stay off the traffic lanes
+    if (rectsOverlap(pad, { x: level.exitGate.x - 20, y: level.exitGate.y, w: level.exitGate.w + 40, h: 110 })) continue;
+    if (near(r, level.playerStart, 110)) continue;
+    if ((level.pickups || []).some(pk => near(r, pk, 60))) continue;
+    if (level.boss && near(r, level.boss, 130)) continue;
+    if (spots.some(o => near(r, o, 170))) continue;
+    if (!canReachRect(reach, r)) continue;
+    spots.push({ x: r.x, y: r.y });
+  }
+  return spots.length === want ? spots : (level.friends || []);
+}
+
+function rollFriendSpots() { friendSpots = levels.map(pickFriendSpots); }
 
 function updateFriendsHud(pop) {
   const total = friendsTotal(), n = friendsFound.size, meter = document.getElementById('friendsMeter');
@@ -1377,7 +1437,7 @@ function updateFriendsHud(pop) {
   document.getElementById('friendsFill').style.width = (total ? n / total * 100 : 0) + '%';
   meter.classList.toggle('done', total > 0 && n >= total);
   document.getElementById('powerRow').classList.toggle('hidden', n === 0);
-  document.getElementById('powerVal').textContent = fmtDamage(powerMult());
+  document.getElementById('powerVal').textContent = fmtDamage(damageBonus());
   if (pop) { meter.classList.remove('pop'); void meter.offsetWidth; meter.classList.add('pop'); }
 }
 
@@ -1389,7 +1449,7 @@ function updateFriends(dt) {
     friendsFound.add(f.id);
     const cx = f.x + f.w / 2, cy = f.y + f.h / 2, all = friendsFound.size >= friendsTotal();
     floaters.push({ x: cx, y: cy - 16, t: 0, text: all ? 'ALL FRIENDS FOUND!' : 'FRIEND FOUND!', tone: 'green' });
-    floaters.push({ x: cx, y: cy + 2, t: 0, text: 'POWER ×' + fmtDamage(powerMult()), tone: 'blue' });
+    floaters.push({ x: cx, y: cy + 2, t: 0, text: '+' + fmtDamage(DAMAGE_PER_FRIEND) + ' DAMAGE', tone: 'blue' });
     followers.push({ sx: cx, sy: cy, joinT: 0, x: cx, y: cy, face: 0, ph: followers.length * 1.3 });
     for (let k = 0; k < 7; k++) {
       const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.2, sp = 40 + Math.random() * 70;
