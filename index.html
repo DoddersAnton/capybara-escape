@@ -1636,27 +1636,112 @@ function drawObstacle(o) {
   }
 }
 
-function drawTree(t) {
-  ctx.fillStyle = '#5b3a1e';
-  ctx.fillRect(t.x - 4, t.y, 8, 20);
-  ctx.fillStyle = '#2f7a2f';
-  ctx.beginPath(); ctx.arc(t.x, t.y - 6, 20, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#3d8f3d';
-  ctx.beginPath(); ctx.arc(t.x - 8, t.y - 14, 14, 0, Math.PI*2); ctx.fill();
+// Trees are painted once per variety (at double size so they stay crisp) and then just copied to the screen.
+// A tree's (x, y) is where its trunk meets the canopy; the sprite's origin sits there.
+const TREE_PALETTES = [
+  { deep: '#14401c', dark: '#1f5a26', mid: '#2f7a2f', light: '#4fa03f', speckLight: '#86cc5c', speckDark: '#153a1a' },
+  { deep: '#1a4a1a', dark: '#2a6a24', mid: '#3f8a2c', light: '#6bb03a', speckLight: '#a4d660', speckDark: '#1c4a16' },
+  { deep: '#103a2a', dark: '#1d5a3a', mid: '#2b7a48', light: '#4c9c5a', speckLight: '#7cc484', speckDark: '#0f3324' },
+];
+const SPRITE_W = 96, SPRITE_H = 96, SPRITE_OX = 48, SPRITE_OY = 60, SPRITE_SCALE = 2;
+const treeSprites = {};
+
+function newSprite() {
+  const c = document.createElement('canvas');
+  c.width = SPRITE_W * SPRITE_SCALE; c.height = SPRITE_H * SPRITE_SCALE;
+  const g = c.getContext('2d');
+  g.scale(SPRITE_SCALE, SPRITE_SCALE); g.translate(SPRITE_OX, SPRITE_OY);
+  return { c, g };
 }
 
-function drawPine(t) {
-  ctx.fillStyle = '#5b3a1e';
-  ctx.fillRect(t.x - 3, t.y + 6, 6, 14);
-  ctx.fillStyle = '#2f5f3a';
-  ctx.beginPath(); ctx.moveTo(t.x, t.y-22); ctx.lineTo(t.x+14, t.y+2); ctx.lineTo(t.x-14, t.y+2); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(t.x, t.y-12); ctx.lineTo(t.x+11, t.y+10); ctx.lineTo(t.x-11, t.y+10); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.65)';
-  ctx.beginPath(); ctx.moveTo(t.x, t.y-22); ctx.lineTo(t.x+4, t.y-14); ctx.lineTo(t.x-4, t.y-14); ctx.closePath(); ctx.fill();
+function paintLeafyTree(g, rnd, pal) {
+  g.fillStyle = 'rgba(0,0,0,0.28)';                                                 // shadow on the ground
+  g.beginPath(); g.ellipse(7, 22, 26, 8, 0, 0, Math.PI * 2); g.fill();
+
+  const bark = g.createLinearGradient(-7, 0, 7, 0);                                 // trunk, lit from the left, flaring at the roots
+  bark.addColorStop(0, '#7d5733'); bark.addColorStop(0.55, '#5b3a1e'); bark.addColorStop(1, '#33200f');
+  g.fillStyle = bark;
+  g.beginPath(); g.moveTo(-3.6, 2); g.lineTo(3.6, 2); g.lineTo(4.4, 17); g.lineTo(8, 23.5); g.lineTo(-8, 23.5); g.lineTo(-4.4, 17); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 0.8;
+  for (let i = 0; i < 4; i++) { const x = -2.5 + i * 1.8; g.beginPath(); g.moveTo(x, 8 + rnd() * 3); g.lineTo(x + (rnd() - 0.5), 19 + rnd() * 3); g.stroke(); }
+
+  const blobs = [], n = 8 + Math.floor(rnd() * 3);                                  // the canopy is a cluster of leafy lumps
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + rnd() * 0.5, d = 8 + rnd() * 7;
+    blobs.push({ x: Math.cos(a) * d * 1.05, y: -8 + Math.sin(a) * d * 0.85, r: 10 + rnd() * 5 });
+  }
+  blobs.push({ x: 0, y: -8, r: 15 });
+  const layer = (color, dx, dy, k) => {
+    g.fillStyle = color;
+    blobs.forEach(b => { g.beginPath(); g.arc(b.x + dx, b.y + dy, b.r * k, 0, Math.PI * 2); g.fill(); });
+  };
+  layer(pal.deep, 1.5, 3.5, 1);                                                     // shaded underside
+  layer(pal.dark, 0, 0, 0.95);
+  layer(pal.mid, -1.5, -2.5, 0.75);
+  layer(pal.light, -3.5, -5, 0.45);                                                 // sunlit top-left
+  for (let i = 0; i < 170; i++) {                                                   // individual leaves
+    const b = blobs[Math.floor(rnd() * blobs.length)], a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * b.r * 0.9;
+    const x = b.x + Math.cos(a) * d, y = b.y + Math.sin(a) * d, lit = (-x - y) / 40 + (rnd() - 0.5) * 0.9;
+    g.fillStyle = lit > 0.4 ? pal.speckLight : lit < -0.2 ? pal.speckDark : pal.mid;
+    g.beginPath(); g.ellipse(x, y, 1.9, 1.2, rnd() * Math.PI, 0, Math.PI * 2); g.fill();
+  }
 }
 
+function paintPineTree(g, rnd) {
+  g.fillStyle = 'rgba(0,0,0,0.26)';
+  g.beginPath(); g.ellipse(6, 22, 21, 6, 0, 0, Math.PI * 2); g.fill();
+  const bark = g.createLinearGradient(-3, 0, 3, 0);
+  bark.addColorStop(0, '#6d4a2a'); bark.addColorStop(1, '#33200f');
+  g.fillStyle = bark; g.fillRect(-2.6, 8, 5.2, 15);
+
+  // tiers of branches, bottom to top; each has a ragged hem, a sunlit left side and a shaded right side
+  [{ y: 14, hw: 19, h: 17 }, { y: 3, hw: 15.5, h: 16 }, { y: -8, hw: 12, h: 15 }, { y: -18, hw: 8.5, h: 14 }].forEach(t => {
+    const apexY = t.y - t.h, hem = [];
+    for (let k = 0; k <= 8; k++) hem.push([-t.hw + k * (t.hw * 2 / 8), t.y + (k % 2 ? 2.8 : -0.4) + rnd() * 1.2]);
+    const body = () => { g.beginPath(); g.moveTo(0, apexY); hem.forEach(p => g.lineTo(p[0], p[1])); g.closePath(); };
+    g.fillStyle = '#1c4527'; body(); g.fill();
+    g.save(); body(); g.clip();
+    g.fillStyle = 'rgba(70,140,80,0.5)';                                            // sunlit side
+    g.beginPath(); g.moveTo(0, apexY); g.lineTo(-t.hw - 2, t.y + 4); g.lineTo(0, t.y + 4); g.closePath(); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.25)';                                               // shaded side
+    g.beginPath(); g.moveTo(0, apexY); g.lineTo(t.hw + 2, t.y + 4); g.lineTo(0, t.y + 4); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.22)'; g.lineWidth = 0.8; g.beginPath();          // needles
+    for (let i = 0; i < 26; i++) {
+      const yy = apexY + 2 + rnd() * (t.h - 2), reach = (yy - apexY) / t.h * t.hw * 0.9, xx = (rnd() * 2 - 1) * reach;
+      g.moveTo(xx, yy); g.lineTo(xx + (xx < 0 ? -1 : 1) * 2.4, yy + 2.6);
+    }
+    g.stroke();
+    g.strokeStyle = 'rgba(130,200,120,0.25)'; g.beginPath();
+    for (let i = 0; i < 12; i++) { const yy = apexY + 3 + rnd() * (t.h - 3), xx = -rnd() * (yy - apexY) / t.h * t.hw * 0.8; g.moveTo(xx, yy); g.lineTo(xx - 2, yy + 2.4); }
+    g.stroke();
+    g.restore();
+    // snow settled on the upper part of the tier
+    const cap = t.h * 0.42;
+    g.fillStyle = '#f4f8fb';
+    g.beginPath(); g.moveTo(0, apexY - 0.5);
+    g.lineTo(t.hw * 0.42 + 1, apexY + cap - 1); g.lineTo(t.hw * 0.2, apexY + cap + 1.5); g.lineTo(0, apexY + cap - 1); g.lineTo(-t.hw * 0.25, apexY + cap + 2); g.lineTo(-t.hw * 0.42 - 1, apexY + cap - 1);
+    g.closePath(); g.fill();
+    g.fillStyle = 'rgba(150,175,205,0.55)';                                         // cool shadow on the snow's right side
+    g.beginPath(); g.moveTo(0, apexY); g.lineTo(t.hw * 0.42 + 1, apexY + cap - 1); g.lineTo(t.hw * 0.2, apexY + cap + 1.5); g.lineTo(2, apexY + cap - 3); g.closePath(); g.fill();
+  });
+}
+
+function treeSprite(kind, variant) {
+  const key = kind + variant;
+  if (!treeSprites[key]) {
+    const s = newSprite(), rnd = makeRng(variant * 104729 + (kind === 'pine' ? 17 : 5));
+    if (kind === 'pine') paintPineTree(s.g, rnd); else paintLeafyTree(s.g, rnd, TREE_PALETTES[variant % TREE_PALETTES.length]);
+    treeSprites[key] = s.c;
+  }
+  return treeSprites[key];
+}
+
+// The same tree always gets the same look and size, based on where it stands.
 function drawDecorItem(t) {
-  if (t.kind === 'pine') drawPine(t); else drawTree(t);
+  const kind = t.kind === 'pine' ? 'pine' : 'tree';
+  const hash = Math.abs(Math.round(t.x * 7 + t.y * 13 + t.x * t.y * 0.01));
+  const scale = 0.92 + (hash % 5) * 0.045;
+  ctx.drawImage(treeSprite(kind, hash % 3), t.x - SPRITE_OX * scale, t.y - SPRITE_OY * scale, SPRITE_W * scale, SPRITE_H * scale);
 }
 
 function drawBush(b) {
