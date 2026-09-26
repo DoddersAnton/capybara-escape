@@ -208,7 +208,7 @@
     snowy <b>mountain</b>, then duel <b>Darth Vader</b> for the escape pod.
     Move with <b>WASD</b> or <b>Arrow Keys</b> — on a phone or tablet, use the
     on-screen controls at the bottom (you can hide them).
-    Duck into bushes, parked cars, tall grass or snowdrifts to hide — they
+    Duck into bushes, tall grass or snowdrifts to hide — they
     block a watcher's line of sight. Press <b>Space</b> to swing your
     <b>lightsaber</b> — it does 1 damage to people (6 health), 2 damage to
     reindeer (4 health) and 2 damage to cars (10 health), so you can smash
@@ -557,8 +557,8 @@ const level2 = {
   playerStart: {x:468, y:565},
   obstacles: [...borderWalls(GATE_X, GATE_W, 'wall', '#555')],
   bushes: [
-    {x:120, y:540, w:70, h:40, style:'car'},
-    {x:770, y:540, w:70, h:40, style:'car'},
+    {x:120, y:540, w:70, h:40, style:'bush'},
+    {x:770, y:540, w:70, h:40, style:'bush'},
     {x:440, y:305, w:80, h:30, style:'bush'},
     {x:770, y:80, w:70, h:40, style:'bush'},
   ],
@@ -2037,7 +2037,7 @@ function drawDecorItem(t) {
   ctx.drawImage(treeSprite(kind, hash % 3), t.x - SPRITE_OX * scale, t.y - SPRITE_OY * scale, SPRITE_W * scale, SPRITE_H * scale);
 }
 
-/* ---------- Hiding places: bushes, tall grass, parked cars and snowdrifts ---------- */
+/* ---------- Hiding places: bushes, tall grass and snowdrifts ---------- */
 // Each is painted once for its size and look, then copied to the screen.
 
 const BUSH_PAD = 18;
@@ -2141,15 +2141,6 @@ function paintSnowdrift(g, b, variant) {
 
 function drawBush(b) {
   const hash = Math.abs(Math.round(b.x * 7 + b.y * 13)), variant = hash % 3;
-  if (b.style === 'car') {                                                          // a parked car, seen from above like the moving ones
-    ctx.save();
-    ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
-    ctx.scale(b.w / 60, b.h / 32);
-    const style = CAR_STYLES[(hash * 5) % CAR_STYLES.length];
-    drawVehicle({ x: -30, y: -16, w: 60, h: 32, dir: b.x < W / 2 ? 1 : -1, hp: 10, maxHp: 10, hitFlash: 0, dead: false, parked: true, color: style.color, kind: style.kind });
-    ctx.restore();
-    return;
-  }
   const paint = b.style === 'grass' ? paintTallGrass : b.style === 'snow' ? paintSnowdrift : paintLeafyBush;
   const spr = cachedSprite('hide' + b.style + b.w + 'x' + b.h + 'v' + variant + '_' + hash, b.w + BUSH_PAD * 2, b.h + BUSH_PAD * 2, g => paint(g, b, variant));
   ctx.save();
@@ -2705,13 +2696,11 @@ function drawVehicle(v) {
   roundedRectPath(kind === 'van' ? 17 : 8, 13, 4, 3, 1); ctx.fill();
 
   // headlights (with a soft glow on the road ahead) and tail lights
-  if (!v.parked) {
-    const beam = ctx.createLinearGradient(30, 0, 46, 0);
-    beam.addColorStop(0, 'rgba(255,245,190,0.4)'); beam.addColorStop(1, 'rgba(255,245,190,0)');
-    ctx.fillStyle = beam;
-    ctx.beginPath(); ctx.moveTo(29, -10); ctx.lineTo(46, -15); ctx.lineTo(46, 15); ctx.lineTo(29, 10); ctx.closePath(); ctx.fill();
-  }
-  ctx.fillStyle = v.parked ? '#cfd6d8' : '#fff8d0';
+  const beam = ctx.createLinearGradient(30, 0, 46, 0);
+  beam.addColorStop(0, 'rgba(255,245,190,0.4)'); beam.addColorStop(1, 'rgba(255,245,190,0)');
+  ctx.fillStyle = beam;
+  ctx.beginPath(); ctx.moveTo(29, -10); ctx.lineTo(46, -15); ctx.lineTo(46, 15); ctx.lineTo(29, 10); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff8d0';
   roundedRectPath(27, -11.5, 3.5, 5.5, 1.5); ctx.fill();
   roundedRectPath(27, 6, 3.5, 5.5, 1.5); ctx.fill();
   ctx.fillStyle = '#d42020';
