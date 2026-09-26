@@ -1515,53 +1515,227 @@ function drawEnclosureAnimal(o) {
   else if (o.animal === 'reptile') drawReptile(o);
 }
 
-function drawWaterfallCliff(o) {
-  ctx.fillStyle = '#8a8578';
-  ctx.fillRect(o.x, o.y, o.w, o.h);
-  ctx.strokeStyle = '#5f5b4f'; ctx.lineWidth = 3;
-  ctx.strokeRect(o.x, o.y, o.w, o.h);
-  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2;
-  for (let i = 0; i < 3; i++) {
-    ctx.beginPath();
-    ctx.moveTo(o.x + 14 + i*32, o.y + 6);
-    ctx.lineTo(o.x + 8 + i*30, o.y + o.h - 8);
-    ctx.stroke();
+/* ---------- Waterfall, pools and bridge ---------- */
+// The rock, pool banks and bridge timbers are painted once and cached; only the moving water is drawn each frame.
+
+const waterSprites = {};
+function cachedSprite(key, w, h, paint) {
+  if (!waterSprites[key]) {
+    const c = document.createElement('canvas');
+    c.width = w * 2; c.height = h * 2;
+    const g = c.getContext('2d');
+    g.scale(2, 2);
+    paint(g);
+    waterSprites[key] = c;
   }
-  const chanX = o.x + o.w*0.32, chanW = o.w*0.36;
-  ctx.fillStyle = '#bfe4f0';
-  ctx.fillRect(chanX, o.y, chanW, o.h + 20);
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  const speed = 140;
-  for (let i = 0; i < 5; i++) {
-    const yOff = (animTime*speed + i*(o.h/5)) % o.h;
-    ctx.fillRect(chanX + 4, o.y + yOff, chanW - 8, 10);
+  return waterSprites[key];
+}
+
+function waterfallChannel(o) { return { x: o.x + o.w * 0.32, w: o.w * 0.36 }; }
+
+function paintCliff(g, o) {
+  const rnd = makeRng(20240611), w = o.w, h = o.h, ch = { x: w * 0.32, w: w * 0.36 };
+  const face = { x: 0, y: 0, w, h };
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#aaa494'); grad.addColorStop(1, '#6b6658');
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+
+  // stacked, uneven blocks of rock: a lit top edge and a shaded underside on each
+  for (let y = 4, row = 0; y < h; y += 13 + rnd() * 4, row++) {
+    for (let x = -10 + (row % 2) * 12; x < w; x += 20 + rnd() * 14) {
+      const bw = 18 + rnd() * 14, bh = 11 + rnd() * 4;
+      g.fillStyle = rgbVar([135, 129, 116], (rnd() - 0.5) * 34 - y * 0.25);
+      g.beginPath();
+      g.moveTo(x + rnd() * 3, y + rnd() * 2); g.lineTo(x + bw - rnd() * 3, y + rnd() * 2);
+      g.lineTo(x + bw, y + bh - rnd() * 2); g.lineTo(x + rnd() * 3, y + bh);
+      g.closePath(); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.13)'; g.fillRect(x + 1, y, bw - 2, 1.4);
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x + 1, y + bh - 1.6, bw - 2, 1.6);
+    }
+  }
+  blotches(g, rnd, face, 16, [30, 26, 20], 8, 22, 0.25, -1.3);                       // darker toward the foot of the cliff
+  for (let i = 0; i < 7; i++) crack(g, rnd, rnd() * w, 8 + rnd() * (h - 20), 20 + rnd() * 16, 'rgba(30,26,20,0.45)');
+
+  // moss and damp, thickest beside the water
+  [[ch.x - 12, 0, 12], [ch.x + ch.w, 0, 12]].forEach(([mx]) => blotches(g, rnd, { x: mx, y: 0, w: 12, h }, 10, [64, 112, 56], 5, 14, 0.55));
+  blotches(g, rnd, face, 8, [70, 116, 60], 6, 16, 0.35, -1.5);
+
+  // wet, dark rock either side of the channel
+  [ch.x - 5, ch.x + ch.w].forEach(x => {
+    const wet = g.createLinearGradient(0, 0, 0, h);
+    wet.addColorStop(0, 'rgba(30,50,60,0.35)'); wet.addColorStop(1, 'rgba(20,40,55,0.6)');
+    g.fillStyle = wet; g.fillRect(x, 0, 5, h);
+    g.fillStyle = 'rgba(190,225,240,0.25)'; g.fillRect(x + (x < ch.x ? 1 : 3), 0, 1, h);
+  });
+
+  // a grassy lip on top of the cliff
+  g.fillStyle = '#3f7a34'; g.fillRect(0, 0, w, 5);
+  g.fillStyle = '#56954a';
+  for (let x = 0; x < w; x += 3) { const bh = 3 + rnd() * 6; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 1.5, bh); g.lineTo(x + 3, 0); g.fill(); }
+  g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(0, 5, w, 2);
+
+  // fringe of shadow round the edges so the face sits back from the grass
+  const edge = g.createLinearGradient(0, 0, w, 0);
+  edge.addColorStop(0, 'rgba(0,0,0,0.35)'); edge.addColorStop(0.08, 'rgba(0,0,0,0)'); edge.addColorStop(0.92, 'rgba(0,0,0,0)'); edge.addColorStop(1, 'rgba(0,0,0,0.35)');
+  g.fillStyle = edge; g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(40,36,28,0.6)'; g.lineWidth = 1.5; g.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
+}
+
+function drawWaterfallCliff(o) {
+  ctx.drawImage(cachedSprite('cliff', o.w, o.h, g => paintCliff(g, o)), o.x, o.y, o.w, o.h);
+
+  // the falling water, clipped to its channel
+  const ch = waterfallChannel(o), top = o.y, bottom = o.y + o.h + 20, len = bottom - top;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ch.x, top, ch.w, len); ctx.clip();
+  const body = ctx.createLinearGradient(ch.x, 0, ch.x + ch.w, 0);
+  body.addColorStop(0, '#eaf8fc'); body.addColorStop(0.2, '#a8dcec'); body.addColorStop(0.5, '#86cde3'); body.addColorStop(0.8, '#a8dcec'); body.addColorStop(1, '#eaf8fc');
+  ctx.fillStyle = body; ctx.fillRect(ch.x, top, ch.w, len);
+  const air = ctx.createLinearGradient(0, top, 0, bottom);                         // the water turns whiter as it falls and mixes with air
+  air.addColorStop(0, 'rgba(255,255,255,0)'); air.addColorStop(0.55, 'rgba(255,255,255,0.12)'); air.addColorStop(1, 'rgba(255,255,255,0.5)');
+  ctx.fillStyle = air; ctx.fillRect(ch.x, top, ch.w, len);
+
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 16; i++) {                                                   // streaks racing down at different speeds
+    const seed = (i * 7919) % 97 / 97, speed = 150 + ((i * 31) % 11) * 12, sl = 10 + ((i * 13) % 9) * 2.5;
+    const x = ch.x + 3 + ((i * 37) % 100) / 100 * (ch.w - 6);
+    const y = (animTime * speed + seed * (len + sl)) % (len + sl) - sl + top;
+    ctx.strokeStyle = i % 3 === 0 ? 'rgba(70,140,175,0.32)' : 'rgba(255,255,255,' + (0.5 + 0.3 * seed).toFixed(2) + ')';
+    ctx.lineWidth = 1.2 + (i % 3) * 0.7;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.sin(i + animTime * 2) * 0.6, y + sl); ctx.stroke();
+  }
+  for (let i = 0; i < 6; i++) {                                                    // clumps of foam tumbling down
+    const y = (animTime * 190 + i * len / 6) % len + top, x = ch.x + ch.w * (0.2 + 0.6 * (((i * 53) % 10) / 10));
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath(); ctx.ellipse(x, y, 4.5, 3 + (i % 2), 0, 0, Math.PI * 2); ctx.fill();
+  }
+  const lip = ctx.createLinearGradient(0, top, 0, top + 9);                         // water curving over the edge
+  lip.addColorStop(0, 'rgba(255,255,255,0.85)'); lip.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = lip; ctx.fillRect(ch.x, top, ch.w, 9);
+  ctx.fillStyle = 'rgba(30,70,95,0.25)'; ctx.fillRect(ch.x, top + 9, 2, len - 9); ctx.fillRect(ch.x + ch.w - 2, top + 9, 2, len - 9);
+  ctx.restore();
+}
+
+// Spray thrown up where the fall hits the pool. Drawn after the bridge so it drifts over the planks.
+function drawWaterfallMist() {
+  const o = obstacles.find(ob => ob.type === 'waterfallCliff');
+  if (!o) return;
+  const ch = waterfallChannel(o), cx = ch.x + ch.w / 2, base = o.y + o.h + 6;
+  ctx.save();
+  for (let i = 0; i < 9; i++) {
+    const t = (animTime * 0.7 + i / 9) % 1;                                        // each puff rises and fades
+    const px = cx + Math.sin(i * 2.3 + animTime * 1.3) * (ch.w * 0.75), py = base - t * 26 + Math.sin(i * 1.7) * 3, r = 9 + t * 13 + (i % 3) * 3;
+    const gr = ctx.createRadialGradient(px, py, 0, px, py, r);
+    const a = 0.38 * (1 - t) + 0.05;
+    gr.addColorStop(0, 'rgba(255,255,255,' + a.toFixed(3) + ')'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gr; ctx.fillRect(px - r, py - r, r * 2, r * 2);
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';                                        // droplets thrown out to the sides
+  for (let i = 0; i < 12; i++) {
+    const t = (animTime * 1.6 + i * 0.37) % 1, dir = i % 2 ? 1 : -1, sp = 8 + (i % 5) * 4;
+    const x = cx + dir * (ch.w * 0.5 + t * sp), y = base + 2 - Math.sin(t * Math.PI) * (10 + (i % 4) * 3) + t * 8;
+    ctx.globalAlpha = 1 - t; ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function paintPoolBank(g, o, pad) {
+  const rnd = makeRng(Math.round(o.x * 31 + o.y * 17)), cx = pad + o.w / 2, cy = pad + o.h / 2, rx = o.w / 2, ry = o.h / 2;
+  g.fillStyle = 'rgba(70,52,30,0.4)';                                              // wet earth around the water
+  g.beginPath(); g.ellipse(cx, cy + 1, rx + 8, ry + 7, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(40,110,60,0.35)';
+  g.beginPath(); g.ellipse(cx, cy, rx + 5, ry + 4.5, 0, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 26; i++) {                                                   // pebbles round the edge
+    const a = rnd() * Math.PI * 2, k = 1.02 + rnd() * 0.12, s = 1.4 + rnd() * 2.4;
+    const x = cx + Math.cos(a) * (rx + 1) * k, y = cy + Math.sin(a) * (ry + 1) * k;
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); g.ellipse(x + 0.8, y + 1, s, s * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = rgbVar([150, 146, 134], (rnd() - 0.5) * 40); g.beginPath(); g.ellipse(x, y, s, s * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.3)'; g.beginPath(); g.ellipse(x - s * 0.3, y - s * 0.3, s * 0.4, s * 0.25, 0, 0, Math.PI * 2); g.fill();
+  }
+  const rim = g.createRadialGradient(cx, cy, Math.min(rx, ry) * 0.3, cx, cy, Math.max(rx, ry));   // shallow at the edge, deeper in the middle
+  rim.addColorStop(0, '#2c7ca0'); rim.addColorStop(0.6, '#4b9dbf'); rim.addColorStop(1, '#86cbe0');
+  g.save(); g.translate(cx, cy); g.scale(1, ry / rx); g.translate(-cx, -cy);
+  g.fillStyle = rim; g.beginPath(); g.arc(cx, cy, rx, 0, Math.PI * 2); g.fill();
+  g.restore();
+  g.strokeStyle = 'rgba(20,50,70,0.4)'; g.lineWidth = 2;                           // bank shadow falling on the water at the top-left
+  g.beginPath(); g.ellipse(cx, cy, rx - 1, ry - 1, 0, Math.PI * 0.85, Math.PI * 1.75); g.stroke();
+  for (let k = 0; k < 3; k++) {                                                    // reeds
+    const a = 0.3 + k * 1.9 + rnd(), x = cx + Math.cos(a) * (rx + 3), y = cy + Math.sin(a) * (ry + 3);
+    g.strokeStyle = '#3f7a34'; g.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + i * 1.5, y - 6, x + i * 2.4, y - 9 - rnd() * 3); g.stroke(); }
+    g.fillStyle = '#6b4a2a'; g.fillRect(x + 1, y - 12, 1.6, 4);
   }
 }
 
 function drawWater(o) {
-  ctx.fillStyle = '#5fa8c9';
-  ctx.beginPath();
-  ctx.ellipse(o.x + o.w/2, o.y + o.h/2, o.w/2, o.h/2, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.strokeStyle = '#3d7a96'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  const shimmerX = o.x + o.w/2 + Math.sin(animTime*1.5 + o.x)*o.w*0.15;
-  ctx.beginPath(); ctx.ellipse(shimmerX, o.y+o.h/2, o.w*0.15, o.h*0.2, 0, 0, Math.PI*2); ctx.fill();
+  const pad = 14, cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+  ctx.drawImage(cachedSprite('pool' + o.x + '_' + o.y, o.w + pad * 2, o.h + pad * 2, g => paintPoolBank(g, o, pad)), o.x - pad, o.y - pad, o.w + pad * 2, o.h + pad * 2);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx, cy, o.w / 2 - 1, o.h / 2 - 1, 0, 0, Math.PI * 2); ctx.clip();
+  const rx = cx + Math.sin(o.x) * o.w * 0.12, ry = cy + Math.cos(o.y) * o.h * 0.1;
+  for (let i = 0; i < 3; i++) {                                                    // ripples spreading out and fading
+    const t = (animTime * 0.3 + i / 3 + (o.x % 7) * 0.13) % 1;
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.5 * (1 - t)).toFixed(2) + ')'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.ellipse(rx, ry, o.w * (0.05 + 0.5 * t), o.h * (0.05 + 0.5 * t), 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {                                                    // glints of light drifting on the surface
+    const x = o.x + ((i * 41 + animTime * 9) % (o.w + 10)) - 5, y = o.y + (((i * 29) % 100) / 100) * o.h;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 5 + (i % 3) * 2, y); ctx.stroke();
+  }
+  const sparkle = 0.5 + 0.5 * Math.sin(animTime * 3 + o.x);
+  ctx.fillStyle = 'rgba(255,255,255,' + (0.35 + 0.45 * sparkle).toFixed(2) + ')';
+  ctx.beginPath(); ctx.arc(cx - o.w * 0.18, cy - o.h * 0.2, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 function drawBridge(b) {
-  ctx.fillStyle = '#5fa8c9';
-  ctx.fillRect(b.x-4, b.y, b.w+8, b.h);
-  ctx.fillStyle = '#8a5a2a';
-  ctx.fillRect(b.x, b.y+6, b.w, b.h-12);
-  ctx.strokeStyle = '#5a3a15'; ctx.lineWidth = 2;
-  for (let i=6; i<b.w; i+=10) {
-    ctx.beginPath(); ctx.moveTo(b.x+i, b.y+6); ctx.lineTo(b.x+i, b.y+b.h-6); ctx.stroke();
+  // the stream running under it: a channel joining the two pools, with foam where the fall lands and a shadow from the timbers
+  const x0 = b.x - 14, x1 = b.x + b.w + 14, y0 = b.y + 1, y1 = b.y + b.h - 1;
+  const flow = ctx.createLinearGradient(0, y0, 0, y1);
+  flow.addColorStop(0, '#7cc4dc'); flow.addColorStop(0.5, '#3a8cb0'); flow.addColorStop(1, '#6db4d0');
+  ctx.fillStyle = flow;
+  ctx.beginPath(); ctx.moveTo(x0, y0 + 8); ctx.quadraticCurveTo(x0, y0, x0 + 10, y0); ctx.lineTo(x1 - 10, y0); ctx.quadraticCurveTo(x1, y0, x1, y0 + 8);
+  ctx.lineTo(x1, y1 - 8); ctx.quadraticCurveTo(x1, y1, x1 - 10, y1); ctx.lineTo(x0 + 10, y1); ctx.quadraticCurveTo(x0, y1, x0, y1 - 8); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1; ctx.lineCap = 'round';
+  for (let i = 0; i < 7; i++) {                                                     // current flowing out from the foot of the fall to both sides
+    const y = y0 + 6 + i * (y1 - y0 - 12) / 6, t = (animTime * 0.6 + i * 0.29) % 1, dir = i % 2 ? 1 : -1, cx = (b.x + b.w / 2);
+    const x = cx + dir * t * (b.w / 2 + 14);
+    ctx.globalAlpha = 1 - t; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dir * 8, y); ctx.stroke();
   }
-  ctx.strokeRect(b.x, b.y+6, b.w, b.h-12);
-  ctx.strokeStyle = '#6b4423'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(b.x, b.y+6); ctx.lineTo(b.x+b.w, b.y+6); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(b.x, b.y+b.h-6); ctx.lineTo(b.x+b.w, b.y+b.h-6); ctx.stroke();
+  ctx.globalAlpha = 1;
+  const foam = ctx.createLinearGradient(0, y0, 0, y0 + 16);                         // churned white water under the fall
+  foam.addColorStop(0, 'rgba(255,255,255,0.9)'); foam.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = foam; ctx.fillRect(b.x + b.w * 0.25, y0, b.w * 0.5, 16);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(0,25,45,0.35)'; ctx.fillRect(b.x + 2, b.y + 9, b.w, b.h - 12);
+  ctx.drawImage(cachedSprite('bridge' + b.x + '_' + b.y, b.w + 12, b.h, g => paintBridge(g, b)), b.x - 6, b.y, b.w + 12, b.h);
+}
+
+function paintBridge(g, b) {
+  const rnd = makeRng(777), ox = 6, w = b.w, h = b.h;
+  const deck = { x: ox, y: 6, w, h: h - 12 };
+  for (let x = 0; x < deck.w; x += 10) {                                            // planks across the walkway, each a slightly different wood
+    const pw = Math.min(10, deck.w - x) - 0.8;
+    g.fillStyle = rgbVar([148, 100, 52], (rnd() - 0.5) * 34); g.fillRect(deck.x + x, deck.y, pw, deck.h);
+    g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(deck.x + x, deck.y, 1.2, deck.h);
+    g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(deck.x + x + pw - 1.2, deck.y, 1.2, deck.h);
+    g.strokeStyle = 'rgba(60,36,14,0.35)'; g.lineWidth = 0.7;                       // grain
+    for (let k = 0; k < 3; k++) { const gx = deck.x + x + 2 + k * 2.5; g.beginPath(); g.moveTo(gx, deck.y + 2); g.lineTo(gx + (rnd() - 0.5), deck.y + deck.h - 2); g.stroke(); }
+    g.fillStyle = 'rgba(40,24,10,0.7)';                                             // nails
+    g.beginPath(); g.arc(deck.x + x + pw / 2, deck.y + 3, 0.9, 0, Math.PI * 2); g.arc(deck.x + x + pw / 2, deck.y + deck.h - 3, 0.9, 0, Math.PI * 2); g.fill();
+  }
+  [deck.y - 1, deck.y + deck.h - 3.5].forEach((y, i) => {                           // side beams
+    const beam = g.createLinearGradient(0, y, 0, y + 5);
+    beam.addColorStop(0, i ? '#7a5028' : '#8f6233'); beam.addColorStop(1, i ? '#4a2e14' : '#5a3a1a');
+    g.fillStyle = beam; g.fillRect(deck.x - 2, y, deck.w + 4, 5);
+    g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(deck.x - 2, y, deck.w + 4, 1);
+  });
+  [[deck.x - 3, deck.y - 3], [deck.x - 3, deck.y + deck.h - 2], [deck.x + deck.w - 1, deck.y - 3], [deck.x + deck.w - 1, deck.y + deck.h - 2]].forEach(p => {   // posts at each corner
+    g.fillStyle = '#4a2e14'; g.fillRect(p[0], p[1], 4, 5);
+    g.fillStyle = '#7a5028'; g.fillRect(p[0], p[1], 4, 1.5);
+  });
 }
 
 function drawObstacle(o) {
@@ -2958,6 +3132,7 @@ function draw(seenNow) {
   drawExitGate();
   obstacles.forEach(drawObstacle);
   bridges.forEach(drawBridge);
+  drawWaterfallMist();
   pickups.forEach(drawPickup);
   bushes.forEach(drawBush);
   decor.forEach(drawDecorItem);
