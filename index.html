@@ -233,7 +233,7 @@
     you have 7 health, which regenerates while you stay out of his reach.
     Look for the <b>baby capybaras</b> 🐹 dotted across every level — they hide
     in different places every game! Touch
-    one and it follows you, and <b>each one adds 0.2 damage to every hit</b>
+    one and it follows you, and <b>each one adds 0.15 damage to every hit</b>
     (so your lightsaber hits a little harder). Watch the meter in the top corner.
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
     a few seconds of double speed (any left carries into the next level).
@@ -727,7 +727,7 @@ const level5 = {
   pickups: [{x:454, y:320, w:26, h:26, kind:'speed'}],
   friends: [{x:80,y:110},{x:880,y:110},{x:880,y:540}],
   exitGate: EXIT,
-  boss: { name:'DARTH VADER', x:449, y:200, w:30, h:46, hp:24, wake:1.4 },
+  boss: { name:'DARTH VADER', x:449, y:200, w:30, h:46, hp:50, wake:1.4 },
 };
 
 const levels = [level1, level2, level3, level4, level5];
@@ -1287,7 +1287,7 @@ function saberStrike(omni) {
   if (boss && !boss.dead) {
     const bc = center(boss), dx = bc.x - pc.x, dy = bc.y - pc.y;
     if (Math.hypot(dx, dy) <= SABER_REACH + 8 && (omni || Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC)) {
-      const bossDmg = 1 + damageBonus();
+      const bossDmg = 2.5 + damageBonus();
       boss.hp -= bossDmg;
       boss.regenDelay = VADER_REGEN_DELAY;                   // being hit interrupts his healing
       boss.regenAcc = 0;
@@ -1367,10 +1367,10 @@ function updatePickups(dt) {
 // Ones you've found stay found until the game is over, so replaying a level after being caught doesn't lose them.
 
 const FRIEND_W = 22, FRIEND_H = 18;
-const DAMAGE_PER_FRIEND = 0.2;          // each baby capybara that follows you adds this much damage to every hit
+const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
 function damageBonus() { return DAMAGE_PER_FRIEND * friendsFound.size; }
-function fmtDamage(n) { return String(Math.round(n * 10) / 10); }
+function fmtDamage(n) { return String(Math.round(n * 100) / 100); }
 function friendsTotal() { return levels.reduce((n, l) => n + (l.friends || []).length, 0); }
 
 // Where the babies hide is decided afresh every game: a handful of random spots per level that you can actually
