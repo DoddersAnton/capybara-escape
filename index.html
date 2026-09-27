@@ -3957,27 +3957,183 @@ function drawGround() {
   ctx.drawImage(img, 0, 0);
 }
 
-const GATE_STYLES = {
-  zoo: {fill:'#e8c34a', stroke:'#a8842a', text:'#3a2a05'},
-  road: {fill:'#e8c34a', stroke:'#a8842a', text:'#3a2a05'},
-  field: {fill:'#7a5230', stroke:'#4a3018', text:'#fff'},
-  mountain: {fill:'#dfeffa', stroke:'#7a9ab0', text:'#1a2f3a'},
-  vader: {fill:'#bfeaff', stroke:'#4a9ac0', text:'#0c2a3a'},
+/* ---------- Exit gates ---------- */
+// A themed structure per level (Vader's blast door has separate sealed/open sprites), painted once and cached;
+// only the label and, at Vader's door, a pulsing warning light are drawn fresh each frame. Nothing here is drawn
+// above world y=0 — the canvas itself begins there, so anything higher would simply be invisible.
+
+const GATE_PAD_X = 18, GATE_PAD_TOP = 4, GATE_PAD_BOT = 24;
+const GATE_SPRITE_W = GATE_W + GATE_PAD_X * 2, GATE_SPRITE_H = GATE_PAD_TOP + 62 + GATE_PAD_BOT;
+
+function rrLocal(g, x, y, w, h, r) {                                                // a local rounded-rect path (roundedRectPath only ever draws to the main canvas)
+  g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+  g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath();
+}
+
+function paintZooGate(g) {
+  g.translate(GATE_PAD_X, GATE_PAD_TOP);
+  const rnd = makeRng(70001), w = GATE_W, postW = 15, postX = [8, w - 8 - postW];
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  postX.forEach(px => { g.beginPath(); g.ellipse(px + postW / 2, 58, postW * 0.85, 5, 0, 0, Math.PI * 2); g.fill(); });
+  postX.forEach(px => {                                                            // rounded log posts, running up off the top of the screen
+    const grad = g.createLinearGradient(px, 0, px + postW, 0);
+    grad.addColorStop(0, '#9a6a3a'); grad.addColorStop(0.5, '#6b4322'); grad.addColorStop(1, '#4a2e14');
+    g.fillStyle = grad; g.fillRect(px, 0, postW, 58);
+    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.strokeRect(px, 0, postW, 58);
+  });
+  const beamY = 0, beamH = 13;                                                      // the crossbeam, flush with the top of the screen
+  g.strokeStyle = '#5a3a1c'; g.lineWidth = 13; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(postX[0] + postW / 2, beamY + 6); g.lineTo(postX[1] + postW / 2, beamY + 6); g.stroke();
+  g.strokeStyle = '#8a5a30'; g.lineWidth = 8;
+  g.beginPath(); g.moveTo(postX[0] + postW / 2, beamY + 5); g.lineTo(postX[1] + postW / 2, beamY + 5); g.stroke();
+  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 0.7;                            // log-end rings where the beam meets each post
+  [postX[0] + postW / 2, postX[1] + postW / 2].forEach(cx0 => { for (let r0 = 1.5; r0 < 6; r0 += 2) { g.beginPath(); g.arc(cx0, beamY + 6, r0, 0, Math.PI * 2); g.stroke(); } });
+  [postX[0] - 3, postX[1] + postW + 3].forEach((lx, i) => {                        // a leafy sprig by each post
+    g.fillStyle = i ? '#3d8f3d' : '#2f7a2f';
+    for (let k = 0; k < 5; k++) { g.beginPath(); g.ellipse(lx + (rnd() - 0.5) * 6, 12 + (rnd() - 0.5) * 12, 4, 2.4, rnd() * Math.PI, 0, Math.PI * 2); g.fill(); }
+  });
+  const sw = 132, sx = w / 2 - sw / 2, sy = 16, sh = 26;                            // the hanging sign, roped from the beam
+  g.strokeStyle = '#3a2410'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(sx + 10, sy); g.lineTo(sx + 10, beamY + 10); g.moveTo(sx + sw - 10, sy); g.lineTo(sx + sw - 10, beamY + 10); g.stroke();
+  const board = g.createLinearGradient(0, sy, 0, sy + sh);
+  board.addColorStop(0, '#d0a566'); board.addColorStop(1, '#9a6a3a');
+  g.fillStyle = board; rrLocal(g, sx, sy, sw, sh, 4); g.fill();
+  g.strokeStyle = '#5a3a1c'; g.lineWidth = 2; rrLocal(g, sx, sy, sw, sh, 4); g.stroke();
+  g.strokeStyle = 'rgba(90,58,28,0.3)'; g.lineWidth = 0.6;
+  for (let i = 0; i < 6; i++) { const gy = sy + 3 + i * 3.7; g.beginPath(); g.moveTo(sx + 3, gy); g.lineTo(sx + sw - 3, gy + (rnd() - 0.5) * 2); g.stroke(); }
+}
+
+function paintRoadGate(g) {
+  g.translate(GATE_PAD_X, GATE_PAD_TOP);
+  const rnd = makeRng(70002), w = GATE_W, poleX = [10, w - 20];
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  poleX.forEach(px => { g.beginPath(); g.ellipse(px + 5, 58, 8, 4, 0, 0, Math.PI * 2); g.fill(); });
+  poleX.forEach(px => {                                                            // galvanised support poles, running up off-screen
+    const grad = g.createLinearGradient(px, 0, px + 10, 0);
+    grad.addColorStop(0, '#a4aab0'); grad.addColorStop(0.5, '#6a7278'); grad.addColorStop(1, '#454b50');
+    g.fillStyle = grad; g.fillRect(px, 0, 10, 58);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(px, 22, 10, 2); g.fillRect(px, 40, 10, 2);
+  });
+  const boxY = 0, boxH = 8;                                                        // the gantry box, flush with the top
+  g.fillStyle = '#5a6268'; g.fillRect(poleX[0], boxY, poleX[1] + 10 - poleX[0], boxH);
+  g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1;
+  for (let x = poleX[0] + 8; x < poleX[1]; x += 14) { g.beginPath(); g.moveTo(x, boxY); g.lineTo(x, boxY + boxH); g.stroke(); }
+  const sx = 6, sy = boxY + boxH + 2, sw = w - 12, sh = 30;                         // the sign panel, hung just below it
+  g.fillStyle = '#0e6b3a'; rrLocal(g, sx, sy, sw, sh, 3); g.fill();
+  g.strokeStyle = '#e8f0e8'; g.lineWidth = 2.4; rrLocal(g, sx + 2, sy + 2, sw - 4, sh - 4, 2); g.stroke();
+  const shine = g.createLinearGradient(sx, sy, sx + sw, sy + sh);
+  shine.addColorStop(0, 'rgba(255,255,255,0.18)'); shine.addColorStop(0.5, 'rgba(255,255,255,0)'); shine.addColorStop(1, 'rgba(255,255,255,0.1)');
+  g.fillStyle = shine; rrLocal(g, sx, sy, sw, sh, 3); g.fill();
+  for (let i = 0, n = Math.round(sw * sh / 90); i < n; i++) {                       // a little road grime, so it isn't showroom-new
+    g.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.08)';
+    g.fillRect(sx + rnd() * sw, sy + rnd() * sh, 1.3, 1.3);
+  }
+  g.fillStyle = '#2a2e30';
+  [poleX[0] + 2, poleX[1] + 2].forEach(bx => g.fillRect(bx, sy - 3, 6, 5));         // mounting brackets
+}
+
+// Shared by the field and mountain levels: a rustic post with an arrow-ended trail sign, snow-capped on the peak.
+function paintTrailGate(g, snowy) {
+  g.translate(GATE_PAD_X, GATE_PAD_TOP);
+  const rnd = makeRng(snowy ? 70004 : 70003), w = GATE_W, px = w / 2 - 6;
+  g.fillStyle = 'rgba(0,0,0,' + (snowy ? 0.2 : 0.25) + ')'; g.beginPath(); g.ellipse(px + 6, 58, 10, 5, 0, 0, Math.PI * 2); g.fill();
+  const grad = g.createLinearGradient(px, 0, px + 12, 0);                          // the post, running up off-screen
+  if (snowy) { grad.addColorStop(0, '#8a8478'); grad.addColorStop(0.5, '#6b665a'); grad.addColorStop(1, '#494538'); }
+  else { grad.addColorStop(0, '#8a6a3e'); grad.addColorStop(0.5, '#6b4c28'); grad.addColorStop(1, '#493118'); }
+  g.fillStyle = grad; g.fillRect(px, 0, 12, 58);
+  g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1; g.strokeRect(px, 0, 12, 58);
+  if (!snowy) { g.fillStyle = '#7a9a4a'; g.fillRect(px - 1, 32, 14, 4); g.fillStyle = '#d4a020'; g.fillRect(px - 1, 40, 14, 4); }  // painted trail blazes
+  const by = 4, bh = 22, blen = 120, bx = px + 6 - blen / 2;                        // the arrow-ended sign board, pointing the way
+  const board = g.createLinearGradient(0, by, 0, by + bh);
+  if (snowy) { board.addColorStop(0, '#c9c4b6'); board.addColorStop(1, '#9a9488'); }
+  else { board.addColorStop(0, '#b98a52'); board.addColorStop(1, '#8a6034'); }
+  g.fillStyle = board;
+  g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + blen - 14, by); g.lineTo(bx + blen, by + bh / 2); g.lineTo(bx + blen - 14, by + bh); g.lineTo(bx, by + bh); g.closePath(); g.fill();
+  g.strokeStyle = snowy ? '#4a463c' : '#4a3018'; g.lineWidth = 2; g.stroke();
+  g.strokeStyle = 'rgba(70,45,15,0.3)'; g.lineWidth = 0.6;
+  for (let i = 0; i < 5; i++) { const gy = by + 3 + i * 4; g.beginPath(); g.moveTo(bx + 3, gy); g.lineTo(bx + blen - 16, gy + (rnd() - 0.5) * 2); g.stroke(); }
+  g.fillStyle = '#3a2410'; g.beginPath(); g.arc(px + 6, by + bh / 2, 2, 0, Math.PI * 2); g.fill();  // the nail pinning it to the post
+  if (snowy) {
+    g.fillStyle = 'rgba(210,230,245,0.9)';                                         // icicles off the sign's underside
+    for (let i = 0; i < 6; i++) { const ix = bx + 12 + i * 18, il = 4 + rnd() * 7; g.beginPath(); g.moveTo(ix - 2, by + bh); g.lineTo(ix + 2, by + bh); g.lineTo(ix, by + bh + il); g.closePath(); g.fill(); }
+    g.fillStyle = '#f4f8fb'; g.beginPath(); g.ellipse(bx + blen / 2 - 7, by - 1, blen / 2 - 8, 5, 0, 0, Math.PI); g.fill();   // a drift along the top of the sign
+    paintStone(g, rnd, px - 22, 44, 9, 7, [140, 134, 122], null);                   // a little snow-dusted cairn beside the post
+    paintStone(g, rnd, px - 21, 34, 7, 5.5, [150, 144, 132], null);
+    g.fillStyle = 'rgba(240,245,250,0.85)'; g.beginPath(); g.ellipse(px - 21, 29, 5, 3, 0, 0, Math.PI * 2); g.fill();
+  }
+}
+
+// Vader's blast door: plated side pillars and warning chevrons stay the same; the two leaves themselves either
+// stand flush and sealed, or stand apart with a cool glow between them once the exit is unsealed.
+function paintVaderGate(g, sealed) {
+  g.translate(GATE_PAD_X, GATE_PAD_TOP);
+  const w = GATE_W;
+  [0, w - 22].forEach(px => {                                                       // deck-plated side pillars, flush with the top of the screen
+    g.fillStyle = '#20202a'; g.fillRect(px, 0, 22, 66);
+    g.strokeStyle = 'rgba(120,120,170,0.18)'; g.lineWidth = 1; g.strokeRect(px + 2, 2, 18, 62);
+    g.fillStyle = 'rgba(120,120,170,0.25)';
+    for (let y0 = 8; y0 < 60; y0 += 12) { g.beginPath(); g.arc(px + 4, y0, 1.2, 0, Math.PI * 2); g.arc(px + 18, y0, 1.2, 0, Math.PI * 2); g.fill(); }
+  });
+  g.save(); g.beginPath(); g.rect(22, 0, w - 44, 8); g.clip();                      // warning chevrons along the top edge
+  for (let x = 20; x < w - 20; x += 12) { g.fillStyle = Math.round(x / 12) % 2 ? '#17171a' : '#e8c33a'; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 7, 0); g.lineTo(x - 1, 8); g.lineTo(x - 8, 8); g.closePath(); g.fill(); }
+  g.restore();
+  const gap = sealed ? 0 : 34, leafW = (w - 44 - gap) / 2;                          // the two door leaves
+  [-1, 1].forEach(side => {
+    const lx = side < 0 ? 22 : w - 22 - leafW;
+    const dgrad = g.createLinearGradient(lx, 0, lx + leafW, 0);
+    dgrad.addColorStop(0, '#3a3a46'); dgrad.addColorStop(0.5, '#2a2a34'); dgrad.addColorStop(1, '#1c1c24');
+    g.fillStyle = dgrad; g.fillRect(lx, 8, leafW, 50);
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1; g.strokeRect(lx, 8, leafW, 50);
+    g.strokeStyle = 'rgba(150,150,190,0.15)';
+    for (let y0 = 12; y0 < 56; y0 += 8) { g.beginPath(); g.moveTo(lx + 2, y0); g.lineTo(lx + leafW - 2, y0); g.stroke(); }
+    g.fillStyle = side < 0 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.15)'; g.fillRect(lx, 8, leafW, 50);
+  });
+  if (!sealed) {                                                                    // an inviting glow through the open doorway
+    const glow = g.createLinearGradient(0, 8, 0, 58);
+    glow.addColorStop(0, 'rgba(140,220,255,0.55)'); glow.addColorStop(1, 'rgba(80,160,220,0.15)');
+    g.fillStyle = glow; g.fillRect(w / 2 - gap / 2, 8, gap, 50);
+  }
+}
+
+const GATE_PAINTERS = {
+  zoo: paintZooGate, road: paintRoadGate,
+  field: g => paintTrailGate(g, false), mountain: g => paintTrailGate(g, true),
 };
-const GATE_LOCKED = {fill:'#3a1010', stroke:'#a02020', text:'#ff9a9a'};
+// where each theme's sign board sits, so the label lands on it, and a matching, legible colour
+const GATE_LABEL = {
+  zoo: { y: 33, color: '#3a2a05' }, road: { y: 25, color: '#fff' },
+  field: { y: 19, color: '#fff3d6' }, mountain: { y: 19, color: '#1a2f3a' },
+};
 
 function drawExitGate() {
-  const locked = boss && !bossDefeated;
-  const style = locked ? GATE_LOCKED : (GATE_STYLES[currentLevel.theme] || GATE_STYLES.zoo);
-  ctx.fillStyle = style.fill;
-  ctx.fillRect(exitGate.x, 0, exitGate.w, 40);
-  ctx.strokeStyle = style.stroke; ctx.lineWidth = 4;
-  ctx.strokeRect(exitGate.x, 0, exitGate.w, 40);
-  ctx.fillStyle = style.text;
-  ctx.font = 'bold 16px Segoe UI';
-  ctx.textAlign = 'center';
-  ctx.fillText(locked ? 'SEALED' : currentLevel.exitLabel, exitGate.x + exitGate.w/2, 26);
+  const theme = currentLevel.theme;
+  if (theme === 'vader') {
+    const sealed = !!(boss && !bossDefeated);
+    const key = 'gate-vader-' + sealed;
+    ctx.drawImage(cachedSprite(key, GATE_SPRITE_W, GATE_SPRITE_H, g => paintVaderGate(g, sealed)),
+      exitGate.x - GATE_PAD_X, -GATE_PAD_TOP, GATE_SPRITE_W, GATE_SPRITE_H);
+    const cx = exitGate.x + exitGate.w / 2, ly = 10;
+    if (sealed) {
+      const pulse = 0.5 + 0.5 * Math.sin(animTime * 6);
+      ctx.fillStyle = 'rgba(255,50,50,' + (0.55 + 0.4 * pulse).toFixed(2) + ')';
+    } else ctx.fillStyle = '#5ad8ff';
+    ctx.beginPath(); ctx.arc(cx - 66, ly, 3.4, 0, Math.PI * 2); ctx.arc(cx + 66, ly, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.font = 'bold 15px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(sealed ? 'SEALED' : currentLevel.exitLabel, cx, 30);
+    ctx.fillStyle = sealed ? '#ff9a9a' : '#bfeaff'; ctx.fillText(sealed ? 'SEALED' : currentLevel.exitLabel, cx, 30);
+    return;
+  }
+  const key = 'gate-' + theme;
+  ctx.drawImage(cachedSprite(key, GATE_SPRITE_W, GATE_SPRITE_H, GATE_PAINTERS[theme] || paintZooGate),
+    exitGate.x - GATE_PAD_X, -GATE_PAD_TOP, GATE_SPRITE_W, GATE_SPRITE_H);
+  const lbl = GATE_LABEL[theme] || GATE_LABEL.zoo, cx = exitGate.x + exitGate.w / 2;
+  ctx.font = 'bold 15px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.strokeText(currentLevel.exitLabel, cx, lbl.y);
+  ctx.fillStyle = lbl.color; ctx.fillText(currentLevel.exitLabel, cx, lbl.y);
 }
+
 
 // The warning: a red fan on the floor showing exactly where his saber will come down.
 function drawVaderTelegraph(b) {
