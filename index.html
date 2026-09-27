@@ -1424,16 +1424,18 @@ function moveAgainst(entity, dx, dy, solids) {
 }
 
 // Baby capybaras can wander absolutely anywhere the ground is solid — except, on the road level, straight into
-// the traffic lanes (they still roam the sidewalks and the grassy median freely).
+// the traffic lanes (they still roam the sidewalks and the grassy median freely) — and never out through the
+// exit gate itself: that gap in the border wall is only open for you, so a wandering baby can't stray through it
+// and off into the next level (or, worse, off the edge of the world above it).
 function friendSolids(level) {
   if (level.__friendSolids) return level.__friendSolids;
-  let extra = [];
+  let extra = [{ x: GATE_X, y: 0, w: GATE_W, h: 20 }];
   if (level.theme === 'road' && level.roadBands) {
     const b = level.roadBands;
-    extra = [
+    extra.push(
       { x: 0, y: b.sidewalkTop[1], w: W, h: b.median[0] - b.sidewalkTop[1] },
       { x: 0, y: b.median[1], w: W, h: b.sidewalkBottom[0] - b.median[1] },
-    ];
+    );
   }
   return level.__friendSolids = level.obstacles.concat(extra);
 }
