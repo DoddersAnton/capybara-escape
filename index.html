@@ -712,7 +712,7 @@ const level4 = {
 // A duel instead of a stealth level: the exit stays sealed behind an energy barrier until Darth Vader is defeated.
 const level5 = {
   name: "Level 5 — Vader's Lair",
-  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will nip at him too, for 0.5 damage a bite, whenever they're close enough. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
+  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will break formation and surround him once you engage, each nipping in for 0.5 damage whenever it gets the chance. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
   theme: 'vader',
   difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
   exitLabel: 'ESCAPE POD',
@@ -1381,6 +1381,9 @@ const FRIEND_FLEE_SPEED = 108;          // running speed once startled — still
 const FRIEND_ATTACK_RANGE = 42;         // how close a following baby must be to Vader to get a nip in
 const FRIEND_ATTACK_DAMAGE = 0.5;       // damage each nip deals
 const FRIEND_ATTACK_COOLDOWN = 1.3;     // seconds between nips from the same baby
+const FRIEND_ENGAGE_RANGE = 220;        // how close you need to get to Vader before the babies break formation
+const FRIEND_SWARM_RADIUS = 34;         // how far out they ring around him once they do
+const FRIEND_SWARM_SPEED = 95;          // how fast they scurry into position around him
 const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
 function damageBonus() { return DAMAGE_PER_FRIEND * friendsFound.size; }
@@ -1558,19 +1561,40 @@ function updateFollowers(dt) {
   if (moved >= 2) { trailTotal += moved; trail.push({ x: pc.x, y: pc.y, d: trailTotal }); }
   const keep = (followers.length + 1) * FOLLOW_SPACING + 30;
   while (trail.length > 2 && trail[1].d < trailTotal - keep) trail.shift();
+  // The babies stay in line while you're crossing the room, then break off to surround Vader once you're
+  // actually engaging him, rather than dashing across the room ahead of you the moment the level loads.
+  const fighting = !!(boss && !boss.dead) && Math.hypot(pc.x - center(boss).x, pc.y - center(boss).y) < FRIEND_ENGAGE_RANGE;
   followers.forEach((f, k) => {
-    const target = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING), ahead = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING + 8);
-    f.joinT = Math.min(1, f.joinT + dt / 0.45);                                     // newcomers scamper over to their place
-    const e = f.joinT * f.joinT * (3 - 2 * f.joinT);
-    const nx = f.sx + (target.x - f.sx) * e, ny = f.sy + (target.y - f.sy) * e;
-    const dx = ahead.x - target.x, dy = ahead.y - target.y;
-    const heading = f.joinT < 1 ? Math.atan2(ny - f.y, nx - f.x) : (Math.hypot(dx, dy) > 0.5 ? Math.atan2(dy, dx) : f.face);
-    if (Math.hypot(nx - f.x, ny - f.y) > 0.05 || f.joinT >= 1) f.face += normAngle(heading - f.face) * 0.25;
-    f.x = nx; f.y = ny;
+    if (fighting) {
+      // Break out of the line and ring around Vader instead of queuing behind you — with a slow prowl, so it
+      // reads as a swarm circling him rather than parked statues.
+      if (!f.swarming) { f.swarming = true; f.swarmAng = (k / followers.length) * Math.PI * 2 + f.ph; }
+      f.joinT = Math.min(1, f.joinT + dt / 0.3);
+      const bc = center(boss), ang = f.swarmAng + animTime * 0.25;
+      const tx = bc.x + Math.cos(ang) * FRIEND_SWARM_RADIUS, ty = bc.y + Math.sin(ang) * FRIEND_SWARM_RADIUS;
+      const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
+      if (d > 1) {
+        const step = Math.min(d, FRIEND_SWARM_SPEED * dt);
+        f.x += dx / d * step; f.y += dy / d * step;
+        f.face = Math.atan2(dy, dx);
+      } else {
+        f.face += normAngle(Math.atan2(bc.y - f.y, bc.x - f.x) - f.face) * 0.1;     // in position: just glare at him
+      }
+    } else {
+      if (f.swarming) { f.swarming = false; f.joinT = 0; f.sx = f.x; f.sy = f.y; }  // fight's over — fall back into line
+      const target = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING), ahead = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING + 8);
+      f.joinT = Math.min(1, f.joinT + dt / 0.45);                                   // newcomers (or fresh from the fight) scamper over to their place
+      const e = f.joinT * f.joinT * (3 - 2 * f.joinT);
+      const nx = f.sx + (target.x - f.sx) * e, ny = f.sy + (target.y - f.sy) * e;
+      const dx = ahead.x - target.x, dy = ahead.y - target.y;
+      const heading = f.joinT < 1 ? Math.atan2(ny - f.y, nx - f.x) : (Math.hypot(dx, dy) > 0.5 ? Math.atan2(dy, dx) : f.face);
+      if (Math.hypot(nx - f.x, ny - f.y) > 0.05 || f.joinT >= 1) f.face += normAngle(heading - f.face) * 0.25;
+      f.x = nx; f.y = ny;
+    }
 
     if (f.lungeT > 0) f.lungeT -= dt;
     f.atkCd = Math.max(0, (f.atkCd || 0) - dt);
-    if (boss && !boss.dead && f.joinT >= 1) {                                       // babies join the fight: a nip whenever one gets close enough
+    if (fighting && f.joinT >= 1) {                                                 // babies join the fight: a nip whenever one gets close enough
       const bc = center(boss), dist = Math.hypot(f.x - bc.x, f.y - bc.y);
       if (dist <= FRIEND_ATTACK_RANGE && f.atkCd <= 0) {
         boss.hp -= FRIEND_ATTACK_DAMAGE;
