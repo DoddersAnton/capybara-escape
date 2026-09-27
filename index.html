@@ -429,6 +429,10 @@ function sfxNip() {                            // a quick, tiny chomp — a foll
   tone(1600, 0.045, {type:'sine', vol:0.12, sweepTo:2100});
   noiseBurst(0.03, 0.05);
 }
+function sfxYelp() {                           // a startled little squeak — a baby shoved back by Vader's saber
+  tone(1200, 0.08, {type:'sine', vol:0.14, sweepTo:600});
+  tone(700, 0.07, {type:'triangle', vol:0.1, delay:0.05, sweepTo:350});
+}
 function sfxCarHit() {
   tone(1250, 0.07, {type:'square', vol:0.15, sweepTo:700});
   tone(180, 0.12, {type:'triangle', vol:0.16, sweepTo:90});
@@ -712,7 +716,7 @@ const level4 = {
 // A duel instead of a stealth level: the exit stays sealed behind an energy barrier until Darth Vader is defeated.
 const level5 = {
   name: "Level 5 — Vader's Lair",
-  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will break formation and surround him once you engage, each nipping in for 0.5 damage whenever it gets the chance. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
+  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will break formation and surround him once you engage, each nipping in for 0.5 damage whenever it gets the chance — though his swing shoves back any of them caught in it. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
   theme: 'vader',
   difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
   exitLabel: 'ESCAPE POD',
@@ -1160,8 +1164,31 @@ function damagePlayer(n) {
   if (player.hp <= 0) triggerCaught('Darth Vader struck you down!');
 }
 
+// Any baby caught in the arc of his swing gets shoved clear of him — startled, not hurt, so it just has to
+// scurry back into the ring afterwards. Runs regardless of whether the swing lands on you.
+function knockBackFriends(b) {
+  const bc = center(b);
+  let yelped = false;
+  followers.forEach(f => {
+    if (!f.swarming) return;
+    const dx = f.x - bc.x, dy = f.y - bc.y, dist = Math.hypot(dx, dy) || 1;
+    if (dist > VADER_REACH) return;
+    if (Math.abs(normAngle(Math.atan2(dy, dx) - b.lockAim)) > VADER_ARC) return;
+    const nx = dx / dist, ny = dy / dist;
+    f.x += nx * FRIEND_KNOCKBACK;
+    f.y += ny * FRIEND_KNOCKBACK;
+    f.face = Math.atan2(ny, nx);
+    f.atkCd = Math.max(f.atkCd || 0, 0.5);                    // too shaken to nip again the instant it's back
+    spawnSparks(f.x, f.y);
+    floaters.push({ x: f.x, y: f.y - 14, t: 0, text: 'KNOCKED BACK', tone: 'blue' });
+    yelped = true;
+  });
+  if (yelped) sfxYelp();
+}
+
 // The moment his saber comes down: it lands only if you're still close and in front of him.
 function vaderStrike(b) {
+  knockBackFriends(b);
   const bc = center(b), pc = center(player);
   const dx = pc.x - bc.x, dy = pc.y - bc.y;
   if (Math.hypot(dx, dy) > VADER_REACH) return;
@@ -1384,6 +1411,7 @@ const FRIEND_ATTACK_COOLDOWN = 1.3;     // seconds between nips from the same ba
 const FRIEND_ENGAGE_RANGE = 220;        // how close you need to get to Vader before the babies break formation
 const FRIEND_SWARM_RADIUS = 34;         // how far out they ring around him once they do
 const FRIEND_SWARM_SPEED = 95;          // how fast they scurry into position around him
+const FRIEND_KNOCKBACK = 48;            // how far a baby caught in Vader's swing gets shoved back
 const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
 function damageBonus() { return DAMAGE_PER_FRIEND * friendsFound.size; }
