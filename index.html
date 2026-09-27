@@ -1509,7 +1509,7 @@ function drawFollowers() {
     f.px = f.x; f.py = f.y;
     ctx.save();
     if (hiddenNow) ctx.globalAlpha = 0.55;
-    drawBabyCapybara(f.x, f.y, f.face, t, stepping ? Math.abs(Math.sin(t * 12)) * 1.6 : Math.pow(Math.max(0, Math.sin(t * 2.6)), 8) * 3, stepping ? 0 : Math.sin(t * 5) * 0.4);
+    drawBabyCapybara(f.x, f.y, f.face, t, stepping ? Math.abs(Math.sin(t * 12)) * 1.6 : Math.pow(Math.max(0, Math.sin(t * 2.6)), 8) * 3, stepping ? 0 : Math.sin(t * 5) * 0.4, stepping ? Math.sin(t * 12) * 2.4 : 0);
     ctx.restore();
   });
 }
@@ -1522,37 +1522,77 @@ function drawHeart(x, y, s) {
   ctx.closePath(); ctx.fill();
 }
 
-// A baby capybara: lighter, fluffier and rounder-headed than the player, with big eyes.
-function drawBabyCapybara(cx, cy, face, t, hop, bob) {
+// A baby capybara: the same barrel-bodied, blocky-headed shape as the adult (see drawCapybara), scaled down with
+// baby proportions — a bigger head and eyes, a shorter snout, and softer, fluffier fur.
+function drawBabyCapybara(cx, cy, face, t, hop, bob, walk) {
+  walk = walk || 0;
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.beginPath(); ctx.ellipse(cx, cy + 3, 11 - hop * 0.6, 7 - hop * 0.3, 0, 0, Math.PI * 2); ctx.fill();
   ctx.save();
   ctx.translate(cx, cy - hop + bob);
   ctx.rotate(face);
-  ctx.fillStyle = '#5a3d26';                                                        // tiny feet
-  [[3, -6], [3, 6], [-5, -6], [-5, 6]].forEach(([fx, fy]) => { ctx.beginPath(); ctx.ellipse(fx, fy, 2.2, 1.6, 0, 0, Math.PI * 2); ctx.fill(); });
-  const fur = ctx.createLinearGradient(0, -8, 0, 8);
-  fur.addColorStop(0, '#b98a58'); fur.addColorStop(0.5, '#deb684'); fur.addColorStop(1, '#b98a58');
+
+  // short webbed feet, paddling in diagonal pairs while walking
+  ctx.fillStyle = '#3f2a19';
+  [[4, -6.5, walk], [4, 6.5, -walk], [-6, -6.5, -walk], [-6, 6.5, walk]].forEach(([fx, fy, off]) => {
+    ctx.beginPath(); ctx.ellipse(fx + off * 0.5, fy, 2.3, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // barrel-shaped body, fluffier and paler than an adult's
+  const fur = ctx.createLinearGradient(0, -7.5, 0, 7.5);
+  fur.addColorStop(0, '#a87a4e'); fur.addColorStop(0.5, '#e0b988'); fur.addColorStop(1, '#a87a4e');
   ctx.fillStyle = fur;
-  ctx.beginPath(); ctx.ellipse(-1, 0, 9.6, 7.6, 0, 0, Math.PI * 2); ctx.fill();     // round, fluffy body
-  ctx.strokeStyle = 'rgba(90,55,25,0.45)'; ctx.lineWidth = 0.8; ctx.stroke();
-  ctx.strokeStyle = 'rgba(90,55,25,0.22)'; ctx.lineWidth = 0.5;
-  for (let i = 0; i < 9; i++) { const a = i * 0.7; ctx.beginPath(); ctx.moveTo(-3 + Math.cos(a) * 5, Math.sin(a) * 4); ctx.lineTo(-1 + Math.cos(a) * 5, 0.8 + Math.sin(a) * 4); ctx.stroke(); }
-  ctx.fillStyle = 'rgba(255,240,205,0.25)'; ctx.beginPath(); ctx.ellipse(-2, 0, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = fur;
-  ctx.beginPath(); ctx.arc(8.5, 0, 6.4, 0, Math.PI * 2); ctx.fill();               // big round head
-  ctx.beginPath(); ctx.ellipse(12.4, 0, 4.2, 3.9, 0, 0, Math.PI * 2); ctx.fill();   // stubby snout
-  ctx.fillStyle = '#7a5236';                                                        // ears
-  [[5.6, -5.2], [5.6, 5.2]].forEach(([ex, ey]) => { ctx.beginPath(); ctx.ellipse(ex, ey, 1.9, 1.5, 0, 0, Math.PI * 2); ctx.fill(); });
-  ctx.fillStyle = '#2a1a10';                                                        // nose
-  ctx.beginPath(); ctx.ellipse(15.6, 0, 1.5, 2.3, 0, 0, Math.PI * 2); ctx.fill();
-  const blink = (t % 3.7) < 0.12;                                                   // big eyes
+  ctx.beginPath(); ctx.ellipse(-2, 0, 10, 7.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(80,50,22,0.45)'; ctx.lineWidth = 0.8; ctx.stroke();
+
+  // downy fur texture and a pale sheen along the back
+  ctx.strokeStyle = 'rgba(80,50,22,0.22)'; ctx.lineWidth = 0.5;
+  for (let i = 0; i < 10; i++) {
+    const a = i * 0.66, tilt = (i % 3 - 1) * 0.4;
+    ctx.beginPath(); ctx.moveTo(-4 + Math.cos(a) * 6, Math.sin(a) * 4.6); ctx.lineTo(-2.2 + Math.cos(a) * 6, tilt + Math.sin(a) * 4.6); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,240,210,0.3)';
+  ctx.beginPath(); ctx.ellipse(-3, 0, 6.4, 3, 0, 0, Math.PI * 2); ctx.fill();
+
+  // large blocky head blending into a short, blunt snout — bigger in proportion than the adult's
+  const headFur = ctx.createLinearGradient(0, -6.5, 0, 6.5);
+  headFur.addColorStop(0, '#ae8154'); headFur.addColorStop(0.5, '#e2be92'); headFur.addColorStop(1, '#ae8154');
+  ctx.fillStyle = headFur;
+  ctx.beginPath(); ctx.ellipse(9, 0, 7.6, 6.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(13.6, 0, 4.6, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(60,35,14,0.2)';                                              // soft shading at the neck
+  ctx.beginPath(); ctx.ellipse(3, 0, 2.4, 5.6, 0, 0, Math.PI * 2); ctx.fill();
+
+  // small rounded ears, set high like the adult's
+  [[5.2, -5.2], [5.2, 5.2]].forEach(([ex, ey]) => {
+    ctx.fillStyle = '#5a3a20';
+    ctx.beginPath(); ctx.ellipse(ex, ey, 2.1, 1.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8a5f42';
+    ctx.beginPath(); ctx.ellipse(ex + 0.3, ey * 0.94, 0.9, 0.7, 0, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // small dark nose pad with nostrils
+  ctx.fillStyle = '#2a1a10';
+  ctx.beginPath(); ctx.ellipse(17.8, 0, 1.7, 2.7, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#5c3d2e';
+  ctx.beginPath(); ctx.arc(18.4, -1, 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(18.4, 1, 0.5, 0, Math.PI * 2); ctx.fill();
+
+  const blink = (t % 3.7) < 0.12;                                                   // big, baby-round eyes
   [-1, 1].forEach(sd => {
-    if (blink) { ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.moveTo(9, sd * 3.8); ctx.lineTo(11.6, sd * 3.8); ctx.stroke(); }
+    if (blink) { ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(8.2, sd * 4.2); ctx.lineTo(11.2, sd * 4.2); ctx.stroke(); }
     else {
-      ctx.fillStyle = '#1a100a'; ctx.beginPath(); ctx.arc(10.4, sd * 3.8, 1.6, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(10.9, sd * 3.8 - 0.5, 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#241609'; ctx.beginPath(); ctx.arc(9.6, sd * 4.2, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(10.2, sd * 4.2 - 0.6, 0.65, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(9, sd * 4.2 + 0.7, 0.4, 0, Math.PI * 2); ctx.fill();
     }
+  });
+
+  // fine whiskers
+  ctx.strokeStyle = 'rgba(40,26,14,0.45)'; ctx.lineWidth = 0.45;
+  [-1, 1].forEach(s => {
+    ctx.beginPath(); ctx.moveTo(16.4, s * 2.6); ctx.lineTo(19.8, s * 4.8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(16.7, s * 1.6); ctx.lineTo(20.2, s * 2.6); ctx.stroke();
   });
   ctx.restore();
 }
