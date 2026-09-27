@@ -231,10 +231,11 @@
     to <b>block</b>: your saber bounces cars and Vader's blows, but it
     slows you down and drains your Guard bar. Vader hits for 1 damage and
     you have 7 health, which regenerates while you stay out of his reach.
-    Look for the <b>baby capybaras</b> 🐹 dotted across every level — they hide
-    in different places every game! Touch
-    one and it follows you, and <b>each one adds 0.15 damage to every hit</b>
-    (so your lightsaber hits a little harder). Watch the meter in the top corner.
+    Look for the <b>baby capybaras</b> 🐹 roaming every level — they wander off
+    on their own, hide in bushes and tall grass, and bolt if you get too close,
+    so you'll need to give chase! Catch one and it follows you, and <b>each one
+    adds 0.15 damage to every hit</b> (so your lightsaber hits a little harder).
+    Watch the meter in the top corner.
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
     a few seconds of double speed (any left carries into the next level).
     You have <b>3 lives</b> — get caught
@@ -626,12 +627,12 @@ const level3 = {
     {x:750, y:280, w:70, h:50, type:'rock'},
     {x:420, y:420, w:60, h:50, type:'hay'},
     {x:190, y:20, w:130, h:100, type:'waterfallCliff'},
-    {x:180, y:115, w:45, h:55, type:'water'},
-    {x:285, y:115, w:45, h:55, type:'water'},
     {x:450, y:250, w:70, h:50, type:'water'},
   ],
+  // One long bridge spanning the whole width of the waterfall's pool, bank to bank — walk onto it from the
+  // left, the right, or straight on from below; only the cliff itself, to the north, is out of bounds.
   bridges: [
-    {x:225, y:115, w:60, h:55},
+    {x:180, y:115, w:150, h:55},
   ],
   bushes: [
     {x:250, y:230, w:90, h:60, style:'grass'},
@@ -979,7 +980,7 @@ function showLevelIntro(idx) {
   document.getElementById('introTitle').textContent = currentLevel.name;
   document.getElementById('introTip').textContent = currentLevel.tip;
   const here = (currentLevel.friends || []).length, left = friends.length;
-  document.getElementById('introFriends').textContent = here ? '🐹 ' + here + ' baby capybaras are hiding here' + (left < here ? ' (' + left + ' still to find)' : '') : '';
+  document.getElementById('introFriends').textContent = here ? '🐹 ' + here + ' baby capybaras are running loose here' + (left < here ? ' (' + left + ' still to find)' : '') : '';
   const stars = document.getElementById('introStars');
   stars.textContent = '';
   const label = document.createElement('b');
@@ -1363,15 +1364,74 @@ function updatePickups(dt) {
 }
 
 /* ---------- Baby capybaras ---------- */
-// Little capybaras dotted across the levels. Touch one to collect it; the meter in the top corner counts them.
-// Ones you've found stay found until the game is over, so replaying a level after being caught doesn't lose them.
+// Little capybaras loose on the levels: they amble about on their own and duck into bushes and tall grass, then
+// bolt (in a wobbly zig-zag, not straight toward a wall) if you get close, so you have to chase them down. Touch
+// one to collect it; the meter in the top corner counts them. Ones you've found stay found until the game is
+// over, so replaying a level after being caught doesn't lose them.
 
 const FRIEND_W = 22, FRIEND_H = 18;
+const FRIEND_NOTICE = 85;               // gets spooked and runs once you're this close...
+const FRIEND_NOTICE_EXIT = 150;         // ...and settles back down once you're this far away
+const FRIEND_ROAM_SPEED = 46;           // ambling around when unbothered
+const FRIEND_FLEE_SPEED = 108;          // running speed once startled — still well below your own
 const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
 function damageBonus() { return DAMAGE_PER_FRIEND * friendsFound.size; }
 function fmtDamage(n) { return String(Math.round(n * 100) / 100); }
 function friendsTotal() { return levels.reduce((n, l) => n + (l.friends || []).length, 0); }
+
+function moveAgainst(entity, dx, dy, solids) {
+  if (dx !== 0) { const test = { x: entity.x + dx, y: entity.y, w: entity.w, h: entity.h }; if (!collidesAny(test, solids)) entity.x = test.x; }
+  if (dy !== 0) { const test = { x: entity.x, y: entity.y + dy, w: entity.w, h: entity.h }; if (!collidesAny(test, solids)) entity.y = test.y; }
+}
+
+// Baby capybaras can wander absolutely anywhere the ground is solid — except, on the road level, straight into
+// the traffic lanes (they still roam the sidewalks and the grassy median freely).
+function friendSolids(level) {
+  if (level.__friendSolids) return level.__friendSolids;
+  let extra = [];
+  if (level.theme === 'road' && level.roadBands) {
+    const b = level.roadBands;
+    extra = [
+      { x: 0, y: b.sidewalkTop[1], w: W, h: b.median[0] - b.sidewalkTop[1] },
+      { x: 0, y: b.median[1], w: W, h: b.sidewalkBottom[0] - b.median[1] },
+    ];
+  }
+  return level.__friendSolids = level.obstacles.concat(extra);
+}
+
+// Wander when left alone; once you're close enough, switch to fleeing (with a bit of wobble, so it's not a
+// dead-straight sprint into the nearest wall) until you back off, then settle back into ambling around.
+function updateFriendAI(f, dt) {
+  const pc = center(player), fc = center(f);
+  const dist = Math.hypot(fc.x - pc.x, fc.y - pc.y);
+  if (dist < FRIEND_NOTICE) f.mode = 'flee';
+  else if (f.mode === 'flee' && dist > FRIEND_NOTICE_EXIT) { f.mode = 'pause'; f.t = 0; }
+  else if (f.mode === undefined) { f.mode = 'pause'; f.t = Math.random(); }
+
+  let vx = 0, vy = 0;
+  if (f.mode === 'flee') {
+    f.wobble = (f.wobble || 0) + dt * 3.2;
+    const ang = Math.atan2(fc.y - pc.y, fc.x - pc.x) + Math.sin(f.wobble) * 0.55;
+    vx = Math.cos(ang) * FRIEND_FLEE_SPEED; vy = Math.sin(ang) * FRIEND_FLEE_SPEED;
+  } else {
+    f.t -= dt;
+    if (f.t <= 0) {
+      if (f.mode === 'walk' || Math.random() < 0.4) { f.mode = 'pause'; f.t = 0.5 + Math.random() * 1.3; }
+      else { f.mode = 'walk'; f.ang = Math.random() * Math.PI * 2; f.t = 0.8 + Math.random() * 1.8; }
+    }
+    if (f.mode === 'walk') { vx = Math.cos(f.ang) * FRIEND_ROAM_SPEED; vy = Math.sin(f.ang) * FRIEND_ROAM_SPEED; }
+  }
+
+  f.moving = vx !== 0 || vy !== 0;
+  if (f.moving) {
+    const before = { x: f.x, y: f.y };
+    moveAgainst(f, vx * dt, vy * dt, friendSolids(currentLevel));
+    f.moving = f.x !== before.x || f.y !== before.y;
+    if (f.moving) f.face = Math.atan2(vy, vx);
+    else if (f.mode === 'walk') f.t = 0;   // walked into something solid — try a new direction next tick
+  }
+}
 
 // Where the babies hide is decided afresh every game: a handful of random spots per level that you can actually
 // walk to, kept clear of walls, water, bushes, roads and each other. (The spots written into each level are only a
@@ -1444,6 +1504,7 @@ function updateFriendsHud(pop) {
 function updateFriends(dt) {
   for (let i = friends.length - 1; i >= 0; i--) {
     const f = friends[i];
+    updateFriendAI(f, dt);
     if (!rectsOverlap(player, {x: f.x - 4, y: f.y - 4, w: f.w + 8, h: f.h + 8})) continue;
     friends.splice(i, 1);
     friendsFound.add(f.id);
@@ -1597,22 +1658,32 @@ function drawBabyCapybara(cx, cy, face, t, hop, bob, walk) {
   ctx.restore();
 }
 
-// A baby waiting to be found: it bobs, hops now and then, and turns to watch you when you come close.
+// A baby that hasn't been found yet: it wanders on its own, freezes to watch you when you're near, breaks into a
+// run if you get too close, and hides — a little dimmer, like you do — in bushes and tall grass.
 function drawFriend(f) {
-  const t = animTime + f.ph, cx = f.x + f.w / 2, cy = f.y + f.h / 2, pc = center(player);
-  const near = Math.hypot(pc.x - cx, pc.y - cy) < 170;
+  const t = animTime + f.ph, cx = f.x + f.w / 2, cy = f.y + f.h / 2;
   if (f.face === undefined) f.face = f.rest;
-  f.face += normAngle((near ? Math.atan2(pc.y - cy, pc.x - cx) : f.rest + Math.sin(t * 0.5) * 0.5) - f.face) * 0.1;
-  const hop = Math.pow(Math.max(0, Math.sin(t * 2.6)), 8) * 4, bob = Math.sin(t * 5) * 0.4;
+  if (!f.moving) {                                                                 // paused: watch you if you're near, otherwise a lazy idle sway
+    const pc = center(player), near = Math.hypot(pc.x - cx, pc.y - cy) < 170;
+    const target = near ? Math.atan2(pc.y - cy, pc.x - cx) : f.rest + Math.sin(t * 0.5) * 0.5;
+    f.face += normAngle(target - f.face) * 0.1;
+  }
+  const hop = f.moving ? Math.abs(Math.sin(t * 12)) * 1.6 : Math.pow(Math.max(0, Math.sin(t * 2.6)), 8) * 4;
+  const bob = f.moving ? 0 : Math.sin(t * 5) * 0.4;
+  const walk = f.moving ? Math.sin(t * 12) * 2.4 : 0;
+  const hidden = inBush({ x: f.x, y: f.y, w: f.w, h: f.h });
 
-  const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);                     // a soft pink glow so they're easy to spot
-  glow.addColorStop(0, 'rgba(255,170,215,0.32)'); glow.addColorStop(1, 'rgba(255,170,215,0)');
+  ctx.save();
+  if (hidden) ctx.globalAlpha = 0.5;
+  const glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);                     // a soft pink glow so they're easier to spot
+  glow.addColorStop(0, 'rgba(255,170,215,' + (f.mode === 'flee' ? 0.42 : 0.32) + ')'); glow.addColorStop(1, 'rgba(255,170,215,0)');
   ctx.fillStyle = glow; ctx.fillRect(cx - 26, cy - 26, 52, 52);
-  drawBabyCapybara(cx, cy, f.face, t, hop, bob);
+  drawBabyCapybara(cx, cy, f.face, t, hop, bob, walk);
 
   const beat = 1 + 0.18 * Math.sin(t * 4);                                          // a little heart floats above
   ctx.fillStyle = 'rgba(255,90,150,0.95)';
   drawHeart(cx, cy - 20 - hop + Math.sin(t * 2) * 1.6, 3.6 * beat);
+  ctx.restore();
 }
 
 function updateHazards(dt) {
@@ -2211,7 +2282,7 @@ function drawWater(o) {
 }
 
 function drawBridge(b) {
-  // the stream running under it: a channel joining the two pools, with foam where the fall lands and a shadow from the timbers
+  // the stream running under it, bank to bank, with foam where the fall lands and a shadow from the timbers
   const x0 = b.x - 14, x1 = b.x + b.w + 14, y0 = b.y + 1, y1 = b.y + b.h - 1;
   const flow = ctx.createLinearGradient(0, y0, 0, y1);
   flow.addColorStop(0, '#7cc4dc'); flow.addColorStop(0.5, '#3a8cb0'); flow.addColorStop(1, '#6db4d0');
