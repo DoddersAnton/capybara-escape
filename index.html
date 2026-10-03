@@ -236,6 +236,8 @@
     so you'll need to give chase! Catch one and it follows you, and <b>each one
     adds 0.15 damage to every hit</b> (so your lightsaber hits a little harder).
     Watch the meter in the top corner.
+    Press <b>V</b> to change how you're watching the game — overhead, a closer
+    follow-cam, or riding right behind the capybara's own eyes.
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
     a few seconds of double speed (any left carries into the next level).
     You have <b>3 lives</b> — get caught
@@ -763,6 +765,7 @@ window.addEventListener('keydown', e => {
   }
   // Typing in the name box, or pressing Enter/Space on a focused overlay button, is handled by that control itself.
   if (t && (t.tagName === 'INPUT' || (t.tagName === 'BUTTON' && t.closest('.overlay')))) return;
+  if (state === 'playing' && e.key.toLowerCase() === 'v' && !e.repeat) cycleView();
   if ((e.key === 'Enter' || e.key === ' ')) {
     const wasPlaying = state === 'playing';
     ensureAudio();
@@ -1362,6 +1365,7 @@ function breakCar(v) {
 
 function updateEffects(dt) {
   if (bossHintCd > 0) bossHintCd -= dt;
+  if (viewBannerT > 0) viewBannerT = Math.max(0, viewBannerT - dt);
   floaters.forEach(f => { f.t += dt; f.y -= 34 * dt; });
   floaters = floaters.filter(f => f.t < 0.7);
 
@@ -4260,8 +4264,58 @@ function drawPickup(p) {
   ctx.restore();
 }
 
+/* ---------- Camera / view perspective ---------- */
+// Press V to cycle how you're watching the game. "Overhead" is the classic view (no camera at all — it's drawn
+// exactly as it always was). The other two are a camera that zooms in and pans to follow the capybara, clamped
+// so it never shows past the edge of the level; "Capybara's Eyes" also leads a little ahead of the way it's
+// facing and vignettes the edges, for something closer to riding along behind its head than a true first-person
+// view, which this top-down engine can't really give you.
+const VIEW_MODES = [
+  { label: 'Overhead', zoom: 1, follow: false },
+  { label: 'Follow Cam', zoom: 1.7, follow: true, lead: 0 },
+  { label: "Capybara's Eyes", zoom: 2.7, follow: true, lead: 46, vignette: true },
+];
+let viewMode = 0;
+let viewBannerT = 0;
+
+function cycleView() {
+  viewMode = (viewMode + 1) % VIEW_MODES.length;
+  viewBannerT = 1.6;
+  sfxClick();
+}
+
+// Where the camera should sit this frame: a scale and a top-left offset, in screen pixels.
+function cameraTransform() {
+  const mode = VIEW_MODES[viewMode];
+  if (!mode.follow) return { zoom: 1, ox: 0, oy: 0 };
+  const zoom = mode.zoom, pc = center(player);
+  const lookX = pc.x + Math.cos(player.facing) * mode.lead, lookY = pc.y + Math.sin(player.facing) * mode.lead;
+  const ox = Math.min(0, Math.max(W - W * zoom, W / 2 - lookX * zoom));
+  const oy = Math.min(0, Math.max(H - H * zoom, H / 2 - lookY * zoom));
+  return { zoom, ox, oy };
+}
+
+function drawViewBanner() {
+  if (viewBannerT <= 0) return;
+  const a = Math.min(1, viewBannerT / 0.3, (1.6 - viewBannerT) / 0.2);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 15px Segoe UI';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  ctx.strokeText(VIEW_MODES[viewMode].label, W / 2, 64);
+  ctx.fillStyle = '#ffe28a';
+  ctx.fillText(VIEW_MODES[viewMode].label, W / 2, 64);
+  ctx.restore();
+}
+
 function draw(seenNow) {
   ctx.clearRect(0, 0, W, H);
+  const cam = cameraTransform();
+  ctx.save();
+  ctx.translate(cam.ox, cam.oy);
+  ctx.scale(cam.zoom, cam.zoom);
+
   drawGround();
 
   drawExitGate();
@@ -4279,6 +4333,14 @@ function draw(seenNow) {
   if (boss) { drawVaderTelegraph(boss); drawVader(boss); }
   drawCapybara(player);
   drawFloaters();
+  ctx.restore();
+
+  if (VIEW_MODES[viewMode].vignette) {                                             // a soft dark frame, for a more intimate, closed-in view
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.62);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  drawViewBanner();
   drawBossBar();
   updateHpDisplay();
 
