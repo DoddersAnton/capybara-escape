@@ -578,7 +578,7 @@ const level1 = {
     { type:'human', look:'zookeeper', mode:'cone', pts:[{x:40,y:470},{x:340,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
     { type:'human', look:'zookeeper', mode:'cone', pts:[{x:600,y:470},{x:920,y:470}], speed:70, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
     { type:'human', look:'zookeeper', mode:'cone', pts:[{x:40,y:250},{x:920,y:250}], speed:85, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
-    { type:'human', look:'zookeeper', mode:'cone', pts:[{x:800,y:270},{x:800,y:60}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
+    { type:'human', look:'zookeeper', mode:'cone', pts:[{x:800,y:244},{x:800,y:60}], speed:75, visionRange:150, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
   ],
   vehicleDefs: [],
   pickups: [{x:560, y:255, w:26, h:26, kind:'speed'}],
@@ -920,6 +920,10 @@ function instantiateHazards(defs, diff) {
     speed: d.speed * diff.speed,
     fillTime: d.fillTime * diff.fill,
     ...(d.mode === 'radius' ? { radius: d.radius * diff.vision } : { visionRange: d.visionRange * diff.vision }),
+    // everyone wanders at random within a bubble around their old patrol line, instead of walking a fixed route —
+    // the line still sets roughly where they roam, just not predictably how.
+    wx: (d.pts[0].x + d.pts[1].x) / 2, wy: (d.pts[0].y + d.pts[1].y) / 2,
+    wr: Math.hypot(d.pts[1].x - d.pts[0].x, d.pts[1].y - d.pts[0].y) / 2 + 50, wmode: 'pause', wt: Math.random() * 2,
     x:d.pts[0].x, y:d.pts[0].y, idx:0, forward:true, angle:0,
   }));
 }
@@ -1145,9 +1149,12 @@ function deflectCar(v) {
 
 /* ---------- Darth Vader ---------- */
 
+const VADER_WANDER_RADIUS = 90;         // how far he'll pace from his starting spot while no one's challenged him
+
 function makeBoss(def) {
   return { ...def, maxHp: def.hp, state: 'wait', t: 0, aim: Math.PI / 2, lockAim: Math.PI / 2,
-           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2, regenDelay: 0, regenAcc: 0 };
+           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2, regenDelay: 0, regenAcc: 0,
+           speed: def.speed || 50, wx: def.x, wy: def.y, wr: VADER_WANDER_RADIUS, wmode: 'pause', wt: 1 + Math.random() };
 }
 
 function damagePlayer(n) {
@@ -1242,6 +1249,10 @@ function updateBoss(dt) {
 
   b.breathT -= dt;
   if (b.breathT <= 0) { sfxVaderBreath(); b.breathT = 2.4; }
+
+  // between swings, and once he's out of your reach, he'll pace a little around where he's standing —
+  // never toward you, so he still never actually gives chase.
+  if (b.state === 'guard' && dist > VADER_REACH) updateWander(b, dt);
 
   b.t += dt;
   if (b.state === 'wait') {
@@ -1787,18 +1798,30 @@ function updateHazards(dt) {
       if (spotted && !h.wasSpotting && h.barkCd === 0) { spotSound.play(); h.barkCd = spotSound.cooldown; }
       h.wasSpotting = spotted;
     }
-    const dest = h.forward ? h.pts[1] : h.pts[0];
-    const ddx = dest.x - h.x, ddy = dest.y - h.y;
-    const dist = Math.hypot(ddx, ddy);
-    if (dist < 4) {
-      h.forward = !h.forward;
-    } else {
-      const nx = ddx/dist, ny = ddy/dist;
-      h.x += nx * h.speed * dt;
-      h.y += ny * h.speed * dt;
-      h.angle = Math.atan2(ny, nx);
-    }
+    updateWander(h, dt);
   });
+}
+
+// Walk a little, pause a little, in a random direction — drifting back toward the middle of their old patrol
+// line whenever they've wandered far from it, so they still roam roughly the area they're meant to be guarding.
+// Used by every hazard (people, dogs, cows, reindeer) and, separately, by Darth Vader between swings.
+function updateWander(h, dt) {
+  h.wt -= dt;
+  if (h.wt <= 0) {
+    if (h.wmode === 'walk' || Math.random() < 0.3) { h.wmode = 'pause'; h.wt = 0.6 + Math.random() * 1.6; }
+    else {
+      const strayed = Math.hypot(h.x - h.wx, h.y - h.wy) > h.wr * 0.7;
+      const toward = Math.atan2(h.wy - h.y, h.wx - h.x);
+      h.wang = strayed && Math.random() < 0.7 ? toward + (Math.random() - 0.5) * 1.2 : Math.random() * Math.PI * 2;
+      h.wmode = 'walk'; h.wt = 1 + Math.random() * 2;
+    }
+  }
+  if (h.wmode !== 'walk') return;
+  const vx = Math.cos(h.wang) * h.speed, vy = Math.sin(h.wang) * h.speed, before = { x: h.x, y: h.y };
+  if (collidesAny(h, friendSolids(currentLevel))) { h.x += vx * dt; h.y += vy * dt; }   // already touching something (an authored patrol point grazing a fence): just step clear, don't get stuck forever
+  else moveAgainst(h, vx * dt, vy * dt, friendSolids(currentLevel));
+  if (h.x !== before.x || h.y !== before.y) h.angle = Math.atan2(vy, vx);
+  else h.wt = 0;                                            // walked into something solid — try a new direction next tick
 }
 
 function updateVehicles(dt) {
