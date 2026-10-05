@@ -1418,14 +1418,14 @@ function updatePickups(dt) {
 const FRIEND_W = 22, FRIEND_H = 18;
 const FRIEND_NOTICE = 85;               // gets spooked and runs once you're this close...
 const FRIEND_NOTICE_EXIT = 150;         // ...and settles back down once you're this far away
-const FRIEND_ROAM_SPEED = 46;           // ambling around when unbothered
-const FRIEND_FLEE_SPEED = 108;          // running speed once startled — still well below your own
+const FRIEND_ROAM_SPEED = 92;           // ambling around when unbothered (twice the old pace)
+const FRIEND_FLEE_SPEED = 216;          // running speed once startled (twice the old pace) — now faster than your base speed, so you'll need a speed boost to run one down
 const FRIEND_ATTACK_RANGE = 42;         // how close a following baby must be to Vader to get a nip in
 const FRIEND_ATTACK_DAMAGE = 0.5;       // damage each nip deals
 const FRIEND_ATTACK_COOLDOWN = 1.3;     // seconds between nips from the same baby
 const FRIEND_ENGAGE_RANGE = 220;        // how close you need to get to Vader before the babies break formation
 const FRIEND_SWARM_RADIUS = 34;         // how far out they ring around him once they do
-const FRIEND_SWARM_SPEED = 95;          // how fast they scurry into position around him
+const FRIEND_SWARM_SPEED = 190;         // how fast they scurry into position around him (twice the old pace)
 const FRIEND_KNOCKBACK = 48;            // how far a baby caught in Vader's swing gets shoved back
 const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
