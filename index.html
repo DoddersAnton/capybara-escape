@@ -878,7 +878,7 @@ const CAR_HP = 10;                      // moving cars can be smashed too...
 const SABER_CAR_DAMAGE = 2;             // ...but each hit only does 2 damage to them
 const CAR_REACH = 42;                   // px from the capybara's centre to the nearest edge of the car
 // Blocking (hold B): the saber deflects cars that hit you head-on. It drains a Guard bar, and slows you down.
-const GUARD_MAX = 100;
+const GUARD_MAX = 200;                  // twice the original 100, so blocking lasts twice as long
 const BLOCK_DRAIN = 12;                 // guard lost per second while holding B
 const BLOCK_HIT_COST = 30;              // guard lost each time a car is deflected
 const GUARD_REGEN = 250;                // guard regained per second while not blocking (10x the original 25)...
@@ -3575,7 +3575,7 @@ function drawBlade(px, py, ang, len, glow) {
 // Guard stance: the blade is held across the front and a shimmering energy shield fans out ahead.
 function drawGuardStance(p) {
   const pulse = 0.5 + 0.5 * Math.sin(animTime * 14);
-  const fading = p.guard < 25 && Math.sin(animTime * 40) > 0;       // flickers when nearly spent
+  const fading = p.guard < GUARD_MAX * 0.25 && Math.sin(animTime * 40) > 0;       // flickers when nearly spent
   ctx.save();
   ctx.globalAlpha *= fading ? 0.35 : 1;
   const grad = ctx.createRadialGradient(8, 0, 8, 8, 0, 36);
@@ -4369,7 +4369,7 @@ function draw(seenNow) {
 
   const guardFill = document.getElementById('guardFill');
   guardFill.style.width = (player.guard / GUARD_MAX * 100).toFixed(0) + '%';
-  guardFill.style.background = player.guardBroken > 0 ? '#8a94a0' : (player.guard < 25 ? '#ff8a33' : '#4fd1ff');
+  guardFill.style.background = player.guardBroken > 0 ? '#8a94a0' : (player.guard < GUARD_MAX * 0.25 ? '#ff8a33' : '#4fd1ff');
   document.getElementById('suspicionFill').style.width = (player.suspicion*100).toFixed(0) + '%';
   document.getElementById('suspicionFill').style.background = seenNow ? '#e23e3e' : (player.suspicion > 0.5 ? '#ff8a33' : '#ffcc33');
   document.getElementById('timeVal').textContent = elapsed.toFixed(1);
