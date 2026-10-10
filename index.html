@@ -233,7 +233,7 @@
     you have 7 health, which regenerates while you stay out of his reach.
     Look for the <b>baby capybaras</b> 🐹 roaming every level — they wander off
     on their own, hide in bushes and tall grass, and bolt if you get too close,
-    so you'll need to give chase! Catch one and it follows you, and <b>each one
+    so you'll need to give chase! Chase one into an exit and it escapes to the next level (you'll find it there instead). Catch one and it follows you, and <b>each one
     adds 0.15 damage to every hit</b> (so your lightsaber hits a little harder).
     Watch the meter in the top corner.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
@@ -963,7 +963,9 @@ function loadLevel(idx, keepBoost = false) {
   if (!keepBoost) player.speedBoostT = 0;
   pickups = (currentLevel.pickups || []).map(p => ({...p, collected:false, respawnT:0}));
   friends = (friendSpots[idx] || currentLevel.friends || []).map((f, i) => ({ id: idx + ':' + i, x: f.x, y: f.y, w: FRIEND_W, h: FRIEND_H, ph: (i * 1.7 + idx * 0.9) % 6.28, rest: (i * 2.1 + idx) % 6.28 }))
-    .filter(f => !friendsFound.has(f.id));
+    .filter(f => !friendsFound.has(f.id) && !friendEscapes.has(f.id));
+  [...friendEscapes].filter(([id, e]) => e.level === idx && !friendsFound.has(id)).forEach(([id, e], i) =>
+    friends.push({ id, x: e.x, y: e.y, w: FRIEND_W, h: FRIEND_H, ph: (i * 1.7 + idx * 0.9 + 0.8) % 6.28, rest: (i * 2.1 + idx + 1) % 6.28, escaped: true }));
   boss = currentLevel.boss ? makeBoss(currentLevel.boss) : null;
   bossDefeated = false;
   bossHintCd = 0;
@@ -983,6 +985,7 @@ function startGame() {
   document.getElementById('creditsScreen').classList.add('hidden');
   elapsed = 0;
   friendsFound.clear();
+  friendEscapes.clear();
   rollFriendSpots();
   lives = MAX_LIVES;
   updateLivesDisplay();
@@ -994,8 +997,10 @@ function showLevelIntro(idx) {
   loadLevel(idx, true);                                  // a remaining speed boost carries over (paused while this screen shows)
   document.getElementById('introTitle').textContent = currentLevel.name;
   document.getElementById('introTip').textContent = currentLevel.tip;
-  const here = (currentLevel.friends || []).length, left = friends.length;
-  document.getElementById('introFriends').textContent = here ? '🐹 ' + here + ' baby capybaras are running loose here' + (left < here ? ' (' + left + ' still to find)' : '') : '';
+  const arrived = [...friendEscapes.values()].filter(e => e.level === idx).length;
+  const here = (currentLevel.friends || []).filter((_, i) => !friendEscapes.has(idx + ':' + i)).length + arrived, left = friends.length;
+  document.getElementById('introFriends').textContent = here ? '🐹 ' + here + ' baby capybaras are running loose here'
+    + (arrived ? ' (' + arrived + ' escaped from the last level)' : '') + (left < here ? ' (' + left + ' still to find)' : '') : '';
   const stars = document.getElementById('introStars');
   stars.textContent = '';
   const label = document.createElement('b');
@@ -1037,6 +1042,7 @@ function startOver() {
   document.getElementById('gameOverScreen').classList.add('hidden');
   elapsed = 0;
   friendsFound.clear();
+  friendEscapes.clear();
   rollFriendSpots();
   lives = MAX_LIVES;
   updateLivesDisplay();
@@ -1429,6 +1435,9 @@ const FRIEND_SWARM_SPEED = 95;          // how fast they scurry into position ar
 const FRIEND_KNOCKBACK = 48;            // how far a baby caught in Vader's swing gets shoved back
 const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
+// Babies that slipped out through an exit gate: id -> { level (the one they ended up in), x, y (where they arrive) }.
+// An escaped baby can't escape again, so each one only ever gets one level ahead of where it started.
+const friendEscapes = new Map();
 function damageBonus() { return DAMAGE_PER_FRIEND * friendsFound.size; }
 function fmtDamage(n) { return String(Math.round(n * 100) / 100); }
 function friendsTotal() { return levels.reduce((n, l) => n + (l.friends || []).length, 0); }
@@ -1439,12 +1448,13 @@ function moveAgainst(entity, dx, dy, solids) {
 }
 
 // Baby capybaras can wander absolutely anywhere the ground is solid — except, on the road level, straight into
-// the traffic lanes (they still roam the sidewalks and the grassy median freely) — and never out through the
-// exit gate itself: that gap in the border wall is only open for you, so a wandering baby can't stray through it
-// and off into the next level (or, worse, off the edge of the world above it).
-function friendSolids(level) {
-  if (level.__friendSolids) return level.__friendSolids;
-  let extra = [{ x: GATE_X, y: 0, w: GATE_W, h: 20 }];
+// the traffic lanes (they still roam the sidewalks and the grassy median freely). The exit gate is a gap in the
+// border wall: a baby that hasn't escaped yet may run through it into the next level (see escapeFriend), but one
+// that already has, or one on the last level, has nowhere further to go, so for them the gap is walled off.
+function friendSolids(level, gateOpen) {
+  const key = gateOpen ? '__friendSolidsOpen' : '__friendSolids';
+  if (level[key]) return level[key];
+  let extra = gateOpen ? [] : [{ x: GATE_X, y: 0, w: GATE_W, h: 20 }];
   if (level.theme === 'road' && level.roadBands) {
     const b = level.roadBands;
     extra.push(
@@ -1452,7 +1462,7 @@ function friendSolids(level) {
       { x: 0, y: b.median[1], w: W, h: b.sidewalkBottom[0] - b.median[1] },
     );
   }
-  return level.__friendSolids = level.obstacles.concat(extra);
+  return level[key] = level.obstacles.concat(extra);
 }
 
 // Wander when left alone; once you're close enough, switch to fleeing (with a bit of wobble, so it's not a
@@ -1481,7 +1491,7 @@ function updateFriendAI(f, dt) {
   f.moving = vx !== 0 || vy !== 0;
   if (f.moving) {
     const before = { x: f.x, y: f.y };
-    moveAgainst(f, vx * dt, vy * dt, friendSolids(currentLevel));
+    moveAgainst(f, vx * dt, vy * dt, friendSolids(currentLevel, canEscape(f)));
     f.moving = f.x !== before.x || f.y !== before.y;
     if (f.moving) f.face = Math.atan2(vy, vx);
     else if (f.mode === 'walk') f.t = 0;   // walked into something solid — try a new direction next tick
@@ -1556,11 +1566,53 @@ function updateFriendsHud(pop) {
   if (pop) { meter.classList.remove('pop'); void meter.offsetWidth; meter.classList.add('pop'); }
 }
 
+function canEscape(f) { return !f.escaped && currentLevelIndex < levels.length - 1; }
+
+// Where a baby that escaped from the level before turns up in this one: near the entrance, but not on top of where
+// you'll be standing, and clear of the same things the hiding spots avoid.
+function pickArrivalSpot(level) {
+  const reach = reachableFrom(level), near = (a, b, d) => Math.hypot(a.x - b.x, a.y - b.y) < d;
+  const roadBands = level.theme === 'road' && level.roadBands ? [level.roadBands.sidewalkTop, level.roadBands.median, level.roadBands.sidewalkBottom] : null;
+  const taken = [...friendEscapes.values()].filter(e => e.level === levels.indexOf(level));
+  for (const minDist of [110, 70, 0]) {
+    for (let tries = 0; tries < 600; tries++) {
+      const a = Math.random() * Math.PI * 2, d = minDist + 20 + Math.random() * 130;
+      const r = { x: Math.round(level.playerStart.x + Math.cos(a) * d), y: Math.round(level.playerStart.y + Math.sin(a) * d), w: FRIEND_W, h: FRIEND_H };
+      if (r.x < 40 || r.y < 50 || r.x > W - 40 - FRIEND_W || r.y > H - 40 - FRIEND_H) continue;
+      const pad = { x: r.x - 8, y: r.y - 8, w: r.w + 16, h: r.h + 16 };
+      if (collidesAny(pad, level.obstacles) || (level.bushes || []).some(b => rectsOverlap(pad, b))) continue;
+      if (roadBands && !roadBands.some(b => r.y >= b[0] + 2 && r.y + r.h <= b[1] - 2)) continue;
+      if (near(r, level.playerStart, minDist)) continue;
+      if (level.boss && near(r, level.boss, 130)) continue;
+      if (taken.some(o => near(r, o, 40))) continue;
+      if (!canReachRect(reach, r)) continue;
+      return { x: r.x, y: r.y };
+    }
+  }
+  return { x: level.playerStart.x + 90, y: level.playerStart.y - 10 };
+}
+
+// A baby that makes it to the exit gate slips through and ends up loose in the next level — gone from this one.
+function escapeFriend(i) {
+  const f = friends.splice(i, 1)[0], dest = currentLevelIndex + 1, spot = pickArrivalSpot(levels[dest]);
+  friendEscapes.set(f.id, { level: dest, x: spot.x, y: spot.y });
+  const cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+  floaters.push({ x: cx, y: cy - 8, t: 0, text: 'A BABY ESCAPED!', tone: 'blue' });
+  for (let k = 0; k < 6; k++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6, sp = 40 + Math.random() * 60;
+    debris.push({ kind: 'heart', x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 0, life: 0.6 + Math.random() * 0.4, size: 3 + Math.random() * 2 });
+  }
+  sfxYelp();
+}
+
 function updateFriends(dt) {
   for (let i = friends.length - 1; i >= 0; i--) {
     const f = friends[i];
     updateFriendAI(f, dt);
-    if (!rectsOverlap(player, {x: f.x - 4, y: f.y - 4, w: f.w + 8, h: f.h + 8})) continue;
+    if (!rectsOverlap(player, {x: f.x - 4, y: f.y - 4, w: f.w + 8, h: f.h + 8})) {
+      if (canEscape(f) && rectsOverlap(f, exitGate)) escapeFriend(i);
+      continue;
+    }
     friends.splice(i, 1);
     friendsFound.add(f.id);
     const cx = f.x + f.w / 2, cy = f.y + f.h / 2, all = friendsFound.size >= friendsTotal();
