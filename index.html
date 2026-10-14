@@ -904,6 +904,7 @@ const HP_REGEN_DELAY = 2.0;             // regeneration only starts this long af
 const VADER_REGEN_BASE = 0.25;          // health regained per second (one every 4 s)...
 const VADER_REGEN_MULT = 3;             // ...3x faster (one every ~1.3 s)
 const VADER_REGEN_DELAY = 2.0;          // starts this long after you last hit him
+const VADER_WOUND_TIME = 20;            // every hit leaves him WOUNDED this long (refreshed by each hit): no healing at all
 const PLAYER_IFRAMES = 0.9;             // brief invulnerability after taking a hit
 const VADER_REACH = 66;                 // he swings at anything this close (centre to centre), and it lands if you're still this close
 const VADER_ARC = 70 * DEG;
@@ -1170,7 +1171,7 @@ const VADER_WANDER_RADIUS = 90;         // how far he'll pace from his starting 
 
 function makeBoss(def) {
   return { ...def, maxHp: def.hp, state: 'wait', t: 0, aim: Math.PI / 2, lockAim: Math.PI / 2,
-           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2, regenDelay: 0, regenAcc: 0,
+           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2, regenDelay: 0, regenAcc: 0, woundT: 0,
            speed: def.speed || 50, wx: def.x, wy: def.y, wr: VADER_WANDER_RADIUS, wmode: 'pause', wt: 1 + Math.random() };
 }
 
@@ -1252,7 +1253,8 @@ function updateBoss(dt) {
   const rage = b.enraged ? 1.25 : 1;
 
   // he heals while you leave him alone (his rage, once earned, doesn't fade)
-  if (b.hp < b.maxHp) {
+  if (b.woundT > 0) b.woundT = Math.max(0, b.woundT - dt);
+  if (b.hp < b.maxHp && b.woundT <= 0) {                    // ...unless he's wounded, which stops it completely
     if (b.regenDelay > 0) b.regenDelay -= dt;
     else {
       b.regenAcc += VADER_REGEN_BASE * VADER_REGEN_MULT * dt;
@@ -1352,8 +1354,7 @@ function saberStrike(omni) {
     if (Math.hypot(dx, dy) <= SABER_REACH + 8 && (omni || Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC)) {
       const bossDmg = 2.5 + damageBonus();
       boss.hp -= bossDmg;
-      boss.regenDelay = VADER_REGEN_DELAY;                   // being hit interrupts his healing
-      boss.regenAcc = 0;
+      woundBoss();
       boss.hitFlash = 0.15;
       floaters.push({ x: bc.x, y: boss.y - 12, t: 0, text: '-' + fmtDamage(bossDmg) });
       bossHit = true;
@@ -1707,8 +1708,7 @@ function updateFollowers(dt) {
       if (dist <= FRIEND_ATTACK_RANGE && f.atkCd <= 0) {
         boss.hp -= FRIEND_ATTACK_DAMAGE;
         boss.hitFlash = Math.max(boss.hitFlash, 0.12);
-        boss.regenDelay = VADER_REGEN_DELAY;                                        // a nip interrupts his healing too
-        boss.regenAcc = 0;
+        woundBoss();                                                                // a nip wounds him too
         floaters.push({ x: bc.x, y: boss.y - 6 - k * 11, t: 0, text: '-' + fmtDamage(FRIEND_ATTACK_DAMAGE) });
         spawnSparks(f.x, f.y);
         sfxNip();
@@ -4310,19 +4310,37 @@ function drawVader(b) {
   ctx.restore();
 }
 
+// Any hit on Vader (saber or a baby's nip) leaves him WOUNDED for VADER_WOUND_TIME: he can't heal at all until it
+// runs out, and each new hit starts the 20 seconds again.
+function woundBoss() {
+  if (boss.woundT <= 0) floaters.push({ x: boss.x + boss.w / 2, y: boss.y - 28, t: 0, text: 'WOUNDED — NO REGEN', tone: 'blue' });
+  boss.woundT = VADER_WOUND_TIME;
+  boss.regenDelay = VADER_REGEN_DELAY;
+  boss.regenAcc = 0;
+}
+
 function drawBossBar() {
   if (!boss || boss.dead) return;
-  const bw = 320, bx = W / 2 - bw / 2, by = H - 34;
+  const bw = 320, bx = W / 2 - bw / 2, by = H - 34, wounded = boss.woundT > 0;
+  const title = boss.name + (boss.enraged ? ' — ENRAGED' : '');
   ctx.textAlign = 'center';
   ctx.font = 'bold 13px Segoe UI';
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-  ctx.strokeText(boss.name + (boss.enraged ? ' — ENRAGED' : ''), W / 2, by - 6);
+  ctx.strokeText(title, W / 2, by - 6);
   ctx.fillStyle = boss.enraged ? '#ff8a6a' : '#ffd0d0';
-  ctx.fillText(boss.name + (boss.enraged ? ' — ENRAGED' : ''), W / 2, by - 6);
-  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(bx - 3, by - 3, bw + 6, 16);
+  ctx.fillText(title, W / 2, by - 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(bx - 3, by - 3, bw + 6, wounded ? 21 : 16);
   ctx.fillStyle = '#4a1414'; ctx.fillRect(bx, by, bw, 10);
   ctx.fillStyle = boss.enraged ? '#ff5a2a' : '#e23e3e';
   ctx.fillRect(bx, by, bw * Math.max(0, boss.hp) / boss.maxHp, 10);
+  if (wounded) {                                                                    // the debuff: a draining timer bar, "no healing"
+    const f = boss.woundT / VADER_WOUND_TIME;
+    ctx.fillStyle = '#16303a'; ctx.fillRect(bx, by + 12, bw, 5);
+    ctx.fillStyle = '#4fd1ff'; ctx.fillRect(bx, by + 12, bw * f, 5);
+    ctx.font = 'bold 11px Segoe UI'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    const label = '🩸 WOUNDED — NO REGEN ' + Math.ceil(boss.woundT) + 's';
+    ctx.strokeText(label, W / 2, by - 21); ctx.fillStyle = '#9fe6ff'; ctx.fillText(label, W / 2, by - 21);
+  }
 }
 
 let shownHp = -1;
