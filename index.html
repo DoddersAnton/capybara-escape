@@ -52,6 +52,7 @@
   #hpPips { display: flex; gap: 3px; }
   #hpPips .pip { width: 14px; height: 10px; background: #e23e3e; border: 1px solid #fff; border-radius: 2px; }
   #hpPips .pip.off { background: rgba(0,0,0,0.45); }
+  #hpPips .pip.half { background: linear-gradient(90deg, #e23e3e 50%, rgba(0,0,0,0.45) 50%); }
   #speedBoostRow { margin-top: 4px; font-size: 12px; color: #ffe066; font-weight: 600; }
   .overlay {
     position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -904,7 +905,9 @@ const HP_REGEN_DELAY = 2.0;             // regeneration only starts this long af
 const VADER_REGEN_BASE = 0.25;          // health regained per second (one every 4 s)...
 const VADER_REGEN_MULT = 3;             // ...3x faster (one every ~1.3 s)
 const VADER_REGEN_DELAY = 2.0;          // starts this long after you last hit him
-const VADER_WOUND_TIME = 20;            // every hit leaves him WOUNDED this long (refreshed by each hit): no healing at all
+const VADER_WOUND_TIME = 20;            // every hit leaves him WOUNDED this long (refreshed by each hit): no healing at all...
+const VADER_WOUND_SLOW = 0.5;           // ...he moves and swings at half speed (windups and recoveries take twice as long)...
+const VADER_WOUND_DAMAGE = 0.5;         // ...and his lightsaber hits do half damage
 const PLAYER_IFRAMES = 0.9;             // brief invulnerability after taking a hit
 const VADER_REACH = 66;                 // he swings at anything this close (centre to centre), and it lands if you're still this close
 const VADER_ARC = 70 * DEG;
@@ -1232,8 +1235,11 @@ function vaderStrike(b) {
     if (player.guard <= 0) breakGuard();
     return;
   }
-  damagePlayer(VADER_DAMAGE);
+  damagePlayer(VADER_DAMAGE * (b.woundT > 0 ? VADER_WOUND_DAMAGE : 1));
 }
+
+// How fast his swings come: faster once enraged, and half as fast again while he's wounded.
+function vaderTempo(b) { return (b.enraged ? 1.25 : 1) * (b.woundT > 0 ? VADER_WOUND_SLOW : 1); }
 
 function updateBoss(dt) {
   const b = boss;
@@ -1250,7 +1256,7 @@ function updateBoss(dt) {
     floaters.push({ x: bc.x, y: b.y - 18, t: 0, text: 'ENRAGED' });
     sfxVaderRage();
   }
-  const rage = b.enraged ? 1.25 : 1;
+  const rage = vaderTempo(b);
 
   // he heals while you leave him alone (his rage, once earned, doesn't fade)
   if (b.woundT > 0) b.woundT = Math.max(0, b.woundT - dt);
@@ -1271,7 +1277,7 @@ function updateBoss(dt) {
 
   // between swings, and once he's out of your reach, he'll pace a little around where he's standing —
   // never toward you, so he still never actually gives chase.
-  if (b.state === 'guard' && dist > VADER_REACH) updateWander(b, dt);
+  if (b.state === 'guard' && dist > VADER_REACH) updateWander(b, b.woundT > 0 ? dt * VADER_WOUND_SLOW : dt);
 
   b.t += dt;
   if (b.state === 'wait') {
@@ -4230,7 +4236,7 @@ function drawExitGate() {
 // The warning: a red fan on the floor showing exactly where his saber will come down.
 function drawVaderTelegraph(b) {
   if (b.state !== 'windup') return;
-  const rage = b.enraged ? 1.25 : 1, u = Math.min(1, b.t / (VADER_WINDUP / rage)), bc = center(b);
+  const rage = vaderTempo(b), u = Math.min(1, b.t / (VADER_WINDUP / rage)), bc = center(b);
   ctx.fillStyle = 'rgba(255,40,40,' + (0.10 + 0.24 * u).toFixed(2) + ')';
   ctx.beginPath(); ctx.moveTo(bc.x, bc.y); ctx.arc(bc.x, bc.y, VADER_REACH, b.lockAim - VADER_ARC, b.lockAim + VADER_ARC); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = 'rgba(255,110,110,' + (0.35 + 0.4 * u).toFixed(2) + ')'; ctx.lineWidth = 2;
@@ -4313,7 +4319,7 @@ function drawVader(b) {
 // Any hit on Vader (saber or a baby's nip) leaves him WOUNDED for VADER_WOUND_TIME: he can't heal at all until it
 // runs out, and each new hit starts the 20 seconds again.
 function woundBoss() {
-  if (boss.woundT <= 0) floaters.push({ x: boss.x + boss.w / 2, y: boss.y - 28, t: 0, text: 'WOUNDED — NO REGEN', tone: 'blue' });
+  if (boss.woundT <= 0) floaters.push({ x: boss.x + boss.w / 2, y: boss.y - 28, t: 0, text: 'WOUNDED', tone: 'blue' });
   boss.woundT = VADER_WOUND_TIME;
   boss.regenDelay = VADER_REGEN_DELAY;
   boss.regenAcc = 0;
@@ -4338,7 +4344,7 @@ function drawBossBar() {
     ctx.fillStyle = '#16303a'; ctx.fillRect(bx, by + 12, bw, 5);
     ctx.fillStyle = '#4fd1ff'; ctx.fillRect(bx, by + 12, bw * f, 5);
     ctx.font = 'bold 11px Segoe UI'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-    const label = '🩸 WOUNDED — NO REGEN ' + Math.ceil(boss.woundT) + 's';
+    const label = '🩸 WOUNDED — NO REGEN · SLOWED · WEAKENED ' + Math.ceil(boss.woundT) + 's';
     ctx.strokeText(label, W / 2, by - 21); ctx.fillStyle = '#9fe6ff'; ctx.fillText(label, W / 2, by - 21);
   }
 }
@@ -4350,7 +4356,10 @@ function updateHpDisplay() {
   wrap.classList.toggle('hidden', !show);
   if (!show || shownHp === player.hp) return;
   shownHp = player.hp;
-  [...document.getElementById('hpPips').children].forEach((s, i) => s.classList.toggle('off', i >= player.hp));
+  [...document.getElementById('hpPips').children].forEach((s, i) => {               // a half-hit leaves half a pip
+    s.classList.toggle('off', i >= Math.ceil(player.hp));
+    s.classList.toggle('half', player.hp > i && player.hp < i + 1);
+  });
 }
 
 function drawPickup(p) {
