@@ -236,8 +236,10 @@
     so you'll need to give chase! Chase one into an exit and it escapes to the next level (you'll find it there instead). Catch one and it follows you, and <b>each one
     adds 0.15 damage to every hit</b> (so your lightsaber hits a little harder).
     Watch the meter in the top corner.
+    A small <b>map</b> shows in the corner of the closer views — press <b>M</b> to hide or show it.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
-    follow-cam, or riding right behind the capybara's own eyes.
+    follow-cam, or true first person through the capybara's own eyes (there,
+    <b>←/→</b> or <b>A/D</b> turn you and <b>↑/↓</b> or <b>W/S</b> walk).
     Look out for glowing <b>⚡ speed pickups</b> on each level — grab one for
     a few seconds of double speed (any left carries into the next level).
     You have <b>3 lives</b> — get caught
@@ -766,6 +768,7 @@ window.addEventListener('keydown', e => {
   // Typing in the name box, or pressing Enter/Space on a focused overlay button, is handled by that control itself.
   if (t && (t.tagName === 'INPUT' || (t.tagName === 'BUTTON' && t.closest('.overlay')))) return;
   if (state === 'playing' && e.key.toLowerCase() === 'v' && !e.repeat) cycleView();
+  if (state === 'playing' && e.key.toLowerCase() === 'm' && !e.repeat) { showMinimap = !showMinimap; try { localStorage.setItem('capybara_minimap', showMinimap ? '1' : '0'); } catch (err) {} }
   if ((e.key === 'Enter' || e.key === ' ')) {
     const wasPlaying = state === 'playing';
     ensureAudio();
@@ -1054,10 +1057,18 @@ function startOver() {
 
 function updatePlayer(dt) {
   let dx = 0, dy = 0;
-  if (keys['arrowup'] || keys['w']) dy -= 1;
-  if (keys['arrowdown'] || keys['s']) dy += 1;
-  if (keys['arrowleft'] || keys['a']) dx -= 1;
-  if (keys['arrowright'] || keys['d']) dx += 1;
+  const firstPerson = !!VIEW_MODES[viewMode].fp;
+  if (firstPerson) {                                      // ←/→ turn you, ↑/↓ walk the way you're looking
+    const turn = ((keys['arrowright'] || keys['d']) ? 1 : 0) - ((keys['arrowleft'] || keys['a']) ? 1 : 0);
+    const walk = ((keys['arrowup'] || keys['w']) ? 1 : 0) - ((keys['arrowdown'] || keys['s']) ? 1 : 0);
+    player.facing = normAngle(player.facing + turn * FP_TURN_SPEED * dt);
+    dx = Math.cos(player.facing) * walk; dy = Math.sin(player.facing) * walk;
+  } else {
+    if (keys['arrowup'] || keys['w']) dy -= 1;
+    if (keys['arrowdown'] || keys['s']) dy += 1;
+    if (keys['arrowleft'] || keys['a']) dx -= 1;
+    if (keys['arrowright'] || keys['d']) dx += 1;
+  }
 
   // holding B raises the guard, as long as it isn't broken or empty
   player.blocking = !!keys['b'] && player.guardBroken <= 0 && player.guard > 0;
@@ -1067,7 +1078,7 @@ function updatePlayer(dt) {
   if (dx !== 0 || dy !== 0) {
     const len = Math.hypot(dx, dy);
     dx = dx/len; dy = dy/len;
-    player.facing = Math.atan2(dy, dx);
+    if (!firstPerson) player.facing = Math.atan2(dy, dx);
     moveWithCollision(player, dx * speed * dt, dy * speed * dt);
     stepTimer -= dt * (boosted ? SPEED_BOOST_MULT : 1);   // footsteps keep pace with the faster legs
     if (stepTimer <= 0) { sfxStep(); stepTimer = 0.26; }
@@ -4025,16 +4036,18 @@ function paintGroundVader(g, rnd) {
 const GROUND_PAINTERS = { zoo: paintGroundZoo, field: paintGroundField, road: paintGroundRoad, mountain: paintGroundMountain, vader: paintGroundVader };
 const groundCache = {};
 
-function drawGround() {
-  const theme = GROUND_PAINTERS[currentLevel.theme] ? currentLevel.theme : 'zoo';
+function groundTheme() { return GROUND_PAINTERS[currentLevel.theme] ? currentLevel.theme : 'zoo'; }
+function groundCanvas() {
+  const theme = groundTheme();
   let img = groundCache[theme];
   if (!img) {
     img = document.createElement('canvas'); img.width = W; img.height = H;
     GROUND_PAINTERS[theme](img.getContext('2d'), makeRng(theme.length * 7919 + theme.charCodeAt(0)), currentLevel);
     groundCache[theme] = img;
   }
-  ctx.drawImage(img, 0, 0);
+  return img;
 }
+function drawGround() { ctx.drawImage(groundCanvas(), 0, 0); }
 
 /* ---------- Exit gates ---------- */
 // A themed structure per level (Vader's blast door has separate sealed/open sprites), painted once and cached;
@@ -4341,14 +4354,12 @@ function drawPickup(p) {
 
 /* ---------- Camera / view perspective ---------- */
 // Press V to cycle how you're watching the game. "Overhead" is the classic view (no camera at all — it's drawn
-// exactly as it always was). The other two are a camera that zooms in and pans to follow the capybara, clamped
-// so it never shows past the edge of the level; "Capybara's Eyes" also leads a little ahead of the way it's
-// facing and vignettes the edges, for something closer to riding along behind its head than a true first-person
-// view, which this top-down engine can't really give you.
+// exactly as it always was). "Follow Cam" is a camera that zooms in and pans to follow the capybara, clamped so it
+// never shows past the edge of the level. "Capybara's Eyes" is a true first-person view (see drawFirstPerson).
 const VIEW_MODES = [
   { label: 'Overhead', zoom: 1, follow: false },
   { label: 'Follow Cam', zoom: 1.7, follow: true, lead: 0 },
-  { label: "Capybara's Eyes", zoom: 2.7, follow: true, lead: 46, vignette: true },
+  { label: "Capybara's Eyes", fp: true },
 ];
 let viewMode = 0;
 let viewBannerT = 0;
@@ -4370,6 +4381,920 @@ function cameraTransform() {
   return { zoom, ox, oy };
 }
 
+/* ---------- First-person view ("Capybara's Eyes") ---------- */
+// A real first-person view, looking out through the capybara's own eyes. The level is still a flat 2D map, so it's
+// drawn with a ray-caster: one ray per screen column finds every wall, hedge and fence it passes (nearest painted
+// last, so low fences let you see what's behind them), the floor is the level's own top-down ground painting
+// projected flat onto the ground, and everything that moves is a billboard sprite. In this view ←/→ (or A/D) turn
+// you and ↑/↓ (or W/S) walk forwards and backwards, like any first-person game.
+const FP_FOV = 80 * DEG, FP_COLS = 320, FP_COLW = W / FP_COLS, FP_HORIZON = Math.round(H / 2);
+const FP_FOCAL = (W / 2) / Math.tan(FP_FOV / 2), FP_EYE = 13, FP_FAR = 1000, FP_TURN_SPEED = 2.6;
+const FP_FLOOR_STEP = 2, FP_FCOLS = W / FP_FLOOR_STEP, FP_ROWS = Math.ceil((H - FP_HORIZON) / FP_FLOOR_STEP);   // the floor is drawn a bit finer than the walls
+const FP_REL = [];                                       // per screen column: the ray's angle from straight ahead
+for (let c = 0; c < FP_COLS; c++) {
+  const a = Math.atan(((c + 0.5) * FP_COLW - W / 2) / FP_FOCAL);
+  FP_REL.push({ a, cos: Math.cos(a), sin: Math.sin(a) });
+}
+const FP_FREL = [];
+for (let c = 0; c < FP_FCOLS; c++) {
+  const a = Math.atan(((c + 0.5) * FP_FLOOR_STEP - W / 2) / FP_FOCAL);
+  FP_FREL.push({ cos: Math.cos(a), sin: Math.sin(a) });
+}
+
+const FP_THEMES = {
+  zoo:      { sky: ['#6fb1ee', '#d9edff'], fog: [217, 237, 255] },
+  road:     { sky: ['#7aa9d6', '#d3dde8'], fog: [211, 221, 232] },
+  field:    { sky: ['#78b7ee', '#e0efd2'], fog: [224, 239, 210] },
+  mountain: { sky: ['#8da9cf', '#e8f0f8'], fog: [232, 240, 248] },
+  vader:    { sky: ['#06070a', '#1b1e27'], fog: [18, 20, 26] },
+};
+const FP_WALLS = {                                       // how tall each kind of obstacle stands, and its colour
+  fence: { h: 24, c: '#a87b45' }, wall: { h: 56, c: '#7d7d7d' }, pillar: { h: 78, c: '#6a7787' },
+  rock: { h: 34, c: '#8d8a82' }, hay: { h: 26, c: '#e0c35a' }, water: { h: 1.5, c: '#3f8fd0' },
+  waterfallCliff: { h: 110, c: '#7a7468' }, barrier: { h: 60, c: '#d94a3a' },
+};
+const FP_BUSHES = { bush: { h: 28, c: '#3c8a3c' }, grass: { h: 24, c: '#7ab648' }, snow: { h: 18, c: '#e6eef4' } };
+const FP_LOOKS = { zookeeper: ['#3f8f5a', '#5b4630', '#7a5a2e'], pedestrian: ['#c94a3a', '#2f3f66', null], hiker: ['#d9762b', '#3f4a3a', '#2f5f2f'] };
+
+const fpRgbCache = {};
+function fpRgb(hex) {
+  if (fpRgbCache[hex]) return fpRgbCache[hex];
+  const key = hex;
+  if (hex.length === 4) hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+  return fpRgbCache[key] = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+}
+function fpTone(rgb, k, fog, f) {                        // a colour darkened by k and hazed towards the fog colour by f
+  const i = 1 - f;
+  return 'rgb(' + ((rgb[0] * k * i + fog[0] * f) | 0) + ',' + ((rgb[1] * k * i + fog[1] * f) | 0) + ',' + ((rgb[2] * k * i + fog[2] * f) | 0) + ')';
+}
+function fpHaze(d) { return Math.min(1, Math.pow(d / FP_FAR, 1.1)) * 0.9; }
+
+// The floor: the level's top-down ground painting, read back once and sampled for every pixel of the floor.
+const fpGroundData = {};
+function fpGroundPixels() {
+  const theme = groundTheme();
+  return fpGroundData[theme] || (fpGroundData[theme] = groundCanvas().getContext('2d').getImageData(0, 0, W, H).data);
+}
+const fpFloorCv = document.createElement('canvas');
+fpFloorCv.width = FP_FCOLS; fpFloorCv.height = FP_ROWS;
+const fpFloorCtx = fpFloorCv.getContext('2d'), fpFloorImg = fpFloorCtx.createImageData(FP_FCOLS, FP_ROWS);
+
+function fpDrawFloor(ex, ey, yaw, fog) {
+  const tex = fpGroundPixels(), data = fpFloorImg.data, cy = Math.cos(yaw), sy = Math.sin(yaw);
+  for (let r = 0; r < FP_ROWS; r++) {
+    const depth = FP_EYE * FP_FOCAL / ((r + 0.5) * FP_FLOOR_STEP), f = fpHaze(depth), inv = 1 - f;
+    for (let c = 0; c < FP_FCOLS; c++) {
+      const rel = FP_FREL[c], dist = depth / rel.cos;
+      const wx = ex + (cy * rel.cos - sy * rel.sin) * dist, wy = ey + (sy * rel.cos + cy * rel.sin) * dist;
+      const i = (r * FP_FCOLS + c) * 4;
+      if (wx >= 0 && wy >= 0 && wx < W && wy < H) {
+        const t = ((wy | 0) * W + (wx | 0)) * 4;
+        data[i] = tex[t] * inv + fog[0] * f; data[i + 1] = tex[t + 1] * inv + fog[1] * f; data[i + 2] = tex[t + 2] * inv + fog[2] * f;
+      } else { data[i] = fog[0]; data[i + 1] = fog[1]; data[i + 2] = fog[2]; }
+      data[i + 3] = 255;
+    }
+  }
+  fpFloorCtx.putImageData(fpFloorImg, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(fpFloorCv, 0, FP_HORIZON, W, H - FP_HORIZON);
+}
+
+// Everything a ray can hit this frame: obstacles and hedges, and the glowing doorway out of the level. A ray that
+// slips out through a gap just runs off into the haze.
+function fpRects() {
+  const rs = [];
+  obstacles.forEach(o => {
+    const sp = FP_WALLS[o.type] || FP_WALLS.wall;
+    rs.push({ x: o.x, y: o.y, w: o.w, h: o.h, ht: sp.h, rgb: fpRgb(o.color || sp.c), kind: o.type, tex: FP_TEXTURED[o.type] ? fpTexture(o.type, o.color || sp.c) : null });
+  });
+  bushes.forEach(b => {
+    const sp = FP_BUSHES[b.style] || FP_BUSHES.bush;
+    rs.push({ x: b.x, y: b.y, w: b.w, h: b.h, ht: sp.h, rgb: fpRgb(sp.c), kind: 'bush', tex: fpTexture(b.style === 'snow' ? 'snow' : b.style === 'grass' ? 'grass' : 'bush', sp.c) });
+  });
+  rs.push({ x: GATE_X + 6, y: -40, w: GATE_W - 12, h: 30, ht: 130, rgb: [255, 236, 140], kind: 'exit' });
+  return rs;
+}
+
+function fpCastWalls(ex, ey, yaw, rects, items) {
+  for (let c = 0; c < FP_COLS; c++) {
+    const rel = FP_REL[c], ang = yaw + rel.a, dx = Math.cos(ang), dy = Math.sin(ang);
+    for (let k = 0; k < rects.length; k++) {
+      const r = rects[k];
+      let tx0, tx1, ty0, ty1;
+      if (dx !== 0) { const a = (r.x - ex) / dx, b = (r.x + r.w - ex) / dx; tx0 = Math.min(a, b); tx1 = Math.max(a, b); }
+      else if (ex < r.x || ex > r.x + r.w) continue; else { tx0 = -Infinity; tx1 = Infinity; }
+      if (dy !== 0) { const a = (r.y - ey) / dy, b = (r.y + r.h - ey) / dy; ty0 = Math.min(a, b); ty1 = Math.max(a, b); }
+      else if (ey < r.y || ey > r.y + r.h) continue; else { ty0 = -Infinity; ty1 = Infinity; }
+      const t0 = Math.max(tx0, ty0), t1 = Math.min(tx1, ty1);
+      if (t0 >= t1 || t0 <= 1 || t0 > FP_FAR) continue;           // missed it, we're inside it (a hedge), or it's too far off
+      const xFace = tx0 > ty0;
+      items.push({ d: t0 * rel.cos, c, r, xFace, u: xFace ? ey + dy * t0 : ex + dx * t0 });
+    }
+  }
+}
+
+// Surface textures for the things you walk beside: leafy hedges, brick, stone, hay and warning stripes. Each is
+// painted once (128px square, tiling sideways) and a one-pixel-wide strip of it is stretched down every screen column.
+const fpTexCache = {};
+function fpRgCanvas(g, x, y, r, hex) { const gr = g.createRadialGradient(x - r * 0.3, y - r * 0.4, r * 0.1, x, y, r); gr.addColorStop(0, '#ffffff'); gr.addColorStop(1, fpSh(hex, -0.04)); return gr; }
+function fpHex6(h) { return h.length === 4 ? '#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3] : h; }
+function fpTexture(kind, hex) {
+  hex = fpHex6(hex);
+  const key = kind + hex;
+  if (fpTexCache[key]) return fpTexCache[key];
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+  const g = cv.getContext('2d'), rnd = makeRng(hex.charCodeAt(2) * 131 + hex.charCodeAt(4) * 17 + kind.length * 977);
+  const wrap = fn => { fn(0); fn(-128); fn(128); };
+  if (kind === 'bush') {
+    g.fillStyle = fpSh(hex, -0.55); g.fillRect(0, 24, 128, 104);
+    for (let i = 0; i < 520; i++) {
+      const x = rnd() * 128, y = 4 + 124 * Math.sqrt(rnd()), r = 3 + rnd() * 7, tone = rnd();
+      const c = tone < 0.25 ? fpSh(hex, -0.4) : tone < 0.72 ? hex : tone < 0.94 ? fpSh(hex, 0.14) : fpSh(hex, 0.28);
+      wrap(o => { g.fillStyle = c; g.beginPath(); g.ellipse(x + o, y, r, r * 0.8, rnd() * 3, 0, Math.PI * 2); g.fill(); });
+    }
+    g.fillStyle = 'rgba(0,0,0,0.22)'; for (let i = 0; i < 60; i++) g.fillRect(rnd() * 128, 30 + rnd() * 96, 2 + rnd() * 3, 1 + rnd() * 2);
+  } else if (kind === 'snow') {                                                              // a soft drift: pale lumps with blue-grey shadows
+    g.fillStyle = fpSh(hex, -0.1); g.fillRect(0, 34, 128, 94);
+    for (let i = 0; i < 46; i++) { const x = rnd() * 128, y = 16 + rnd() * 70, r = 10 + rnd() * 14; wrap(o => { g.fillStyle = fpRgCanvas(g, x + o, y, r, hex); g.beginPath(); g.arc(x + o, y, r, 0, Math.PI * 2); g.fill(); }); }
+    for (let i = 0; i < 70; i++) { const x = rnd() * 128, y = 30 + rnd() * 98, r = 5 + rnd() * 12; wrap(o => { g.fillStyle = 'rgba(150,170,200,0.16)'; g.beginPath(); g.ellipse(x + o, y, r, r * 0.45, 0, 0, Math.PI * 2); g.fill(); }); }
+    g.fillStyle = 'rgba(255,255,255,0.9)'; for (let i = 0; i < 50; i++) g.fillRect(rnd() * 128, 20 + rnd() * 100, 1.5, 1.5);
+  } else if (kind === 'grass') {                                                             // tall blades with a ragged top
+    g.fillStyle = fpSh(hex, -0.4); g.fillRect(0, 60, 128, 68);
+    for (let i = 0; i < 1100; i++) {
+      const x = rnd() * 128, h = 28 + rnd() * 96, lean = (rnd() - 0.5) * 12, tone = rnd();
+      g.strokeStyle = tone < 0.3 ? fpSh(hex, -0.3) : tone < 0.75 ? hex : fpSh(hex, 0.22); g.lineWidth = 1.2 + rnd() * 1.2;
+      wrap(o => { g.beginPath(); g.moveTo(x + o, 128); g.quadraticCurveTo(x + o + lean * 0.3, 128 - h * 0.5, x + o + lean, 128 - h); g.stroke(); });
+    }
+  } else if (kind === 'wall') {
+    g.fillStyle = fpSh(hex, -0.45); g.fillRect(0, 0, 128, 128);
+    for (let r = 0; r < 8; r++) for (let c = -1; c < 5; c++) {
+      const x = c * 32 + (r % 2) * 16 + 1, y = r * 16 + 1, tone = rnd() * 0.3 - 0.12;
+      g.fillStyle = tone < 0 ? fpSh(hex, tone) : fpSh(hex, tone * 0.7); g.fillRect(x, y, 30, 14);
+      g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(x, y, 30, 2); g.fillStyle = 'rgba(0,0,0,0.14)'; g.fillRect(x, y + 12, 30, 2);
+    }
+  } else if (kind === 'hay') {
+    g.fillStyle = hex; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 700; i++) { g.strokeStyle = rnd() < 0.5 ? fpSh(hex, -0.3) : fpSh(hex, 0.3); g.lineWidth = 1; const x = rnd() * 128, y = rnd() * 128; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 8 + rnd() * 10, y + (rnd() - 0.5) * 3); g.stroke(); }
+    g.fillStyle = 'rgba(90,60,20,0.65)'; g.fillRect(0, 34, 128, 4); g.fillRect(0, 92, 128, 4);
+  } else if (kind === 'barrier') {
+    g.fillStyle = '#f2f2f2'; g.fillRect(0, 0, 128, 128); g.fillStyle = hex;
+    for (let x = -128; x < 256; x += 40) { g.beginPath(); g.moveTo(x, 128); g.lineTo(x + 20, 128); g.lineTo(x + 84, 0); g.lineTo(x + 64, 0); g.closePath(); g.fill(); }
+  } else {                                                                                   // rock, pillar, cliff
+    g.fillStyle = hex; g.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 260; i++) { const x = rnd() * 128, y = rnd() * 128, r = 3 + rnd() * 9; wrap(o => { g.fillStyle = rnd() < 0.5 ? fpSh(hex, -0.2) : fpSh(hex, 0.18); g.globalAlpha = 0.5; g.beginPath(); g.ellipse(x + o, y, r, r * 0.7, rnd() * 3, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1; }); }
+    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 1;
+    for (let i = 0; i < 9; i++) { let x = rnd() * 128, y = rnd() * 128; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (rnd() - 0.5) * 16; y += 6 + rnd() * 8; g.lineTo(x, y); } g.stroke(); }
+    if (kind === 'waterfallCliff') { for (let y = 12; y < 128; y += 18 + rnd() * 8) { g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(0, y, 128, 2 + rnd() * 2); } }
+  }
+  return fpTexCache[key] = cv;
+}
+const FP_TEXTURED = { wall: 1, rock: 1, pillar: 1, hay: 1, barrier: 1, waterfallCliff: 1 };
+
+function fpDrawSlice(it, fog) {
+  const r = it.r, s = FP_FOCAL / it.d, x = it.c * FP_COLW;
+  const yAt = hh => FP_HORIZON - (hh - FP_EYE) * s;
+  const top = yAt(r.ht), bot = FP_HORIZON + FP_EYE * s, w = FP_COLW;
+  const f = r.kind === 'exit' ? 0 : fpHaze(it.d);
+  let k = it.xFace ? 0.8 : 1;
+  if (r.kind === 'exit') { k = 0.85 + 0.15 * Math.sin(animTime * 3); ctx.fillStyle = fpTone(r.rgb, k, fog, 0); ctx.fillRect(x, top, w, bot - top); return; }
+  if (r.kind === 'fence') {
+    if (((it.u % 44) + 44) % 44 < 7) { ctx.fillStyle = fpTone(r.rgb, k * 0.85, fog, f); ctx.fillRect(x, top, w, bot - top); return; }   // a post
+    ctx.fillStyle = fpTone(r.rgb, k, fog, f);                                                                                    // two rails, with a gap between
+    ctx.fillRect(x, yAt(r.ht * 0.94), w, (r.ht * 0.14) * s);
+    ctx.fillRect(x, yAt(r.ht * 0.52), w, (r.ht * 0.14) * s);
+    return;
+  }
+  const size = it.xFace ? r.h : r.w, frac = ((it.u - (it.xFace ? r.y : r.x)) / size);
+  if (r.kind === 'pillar' || r.kind === 'rock') k *= 0.74 + 0.34 * Math.sin(Math.max(0, Math.min(1, frac)) * Math.PI);   // rounded shading
+  if (r.tex) {
+    const sx = Math.floor((((it.u / 44) % 1) + 1) % 1 * 128);
+    ctx.drawImage(r.tex, sx, 0, 1, 128, x, top, w, bot - top);
+    if (k < 1) { ctx.fillStyle = 'rgba(0,0,0,' + (1 - k).toFixed(2) + ')'; ctx.fillRect(x, top, w, bot - top); }
+    if (f > 0.01) { ctx.fillStyle = 'rgba(' + fog[0] + ',' + fog[1] + ',' + fog[2] + ',' + f.toFixed(2) + ')'; ctx.fillRect(x, top, w, bot - top); }
+  } else {
+    ctx.fillStyle = fpTone(r.rgb, k, fog, f);
+    ctx.fillRect(x, top, w, bot - top);
+  }
+  if (r.kind === 'wall' || r.kind === 'waterfallCliff') { ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(x, bot - 0.14 * (bot - top), w, 0.14 * (bot - top)); }
+  else if (r.ht > 20 && r.kind !== 'bush' && !r.tex) { ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(x, bot - 0.14 * (bot - top), w, 0.14 * (bot - top)); }
+}
+
+// A world position as seen from the eye: how far ahead it is, where across the screen, and how big things there are.
+function fpProject(ex, ey, yaw, wx, wy) {
+  const dx = wx - ex, dy = wy - ey, ang = normAngle(Math.atan2(dy, dx) - yaw), depth = Math.hypot(dx, dy) * Math.cos(ang);
+  if (depth < 6 || Math.abs(ang) > FP_FOV / 2 + 0.55) return null;
+  const s = FP_FOCAL / depth;
+  return { depth, ang, s, sv: s, sx: W / 2 + Math.tan(ang) * FP_FOCAL, by: FP_HORIZON + FP_EYE * s };
+}
+
+// Sprite painting kit, in world units: x across from the sprite's centre, y up from the ground.
+function fpBox(p, x, y, w, h, color) { ctx.fillStyle = color; ctx.fillRect(p.sx + x * p.s, p.by - (y + h) * p.sv, w * p.s, h * p.sv); }
+function fpOval(p, x, y, rx, ry, color) { ctx.fillStyle = color; ctx.beginPath(); ctx.ellipse(p.sx + x * p.s, p.by - y * p.sv, Math.max(0.3, rx * p.s), Math.max(0.3, ry * p.sv), 0, 0, Math.PI * 2); ctx.fill(); }
+function fpPoly(p, pts, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  pts.forEach((q, i) => { const X = p.sx + q[0] * p.s, Y = p.by - q[1] * p.sv; if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); });
+  ctx.closePath(); ctx.fill();
+}
+function fpLine(p, x0, y0, x1, y1, wd, color) {
+  ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, wd * p.s); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(p.sx + x0 * p.s, p.by - y0 * p.sv); ctx.lineTo(p.sx + x1 * p.s, p.by - y1 * p.sv); ctx.stroke();
+}
+function fpShadow(p, rx) { fpOval(p, 0, 0, rx, 2.2, 'rgba(0,0,0,0.28)'); }
+function fpAlertMark(p, topY) {
+  ctx.font = 'bold ' + Math.max(16, Math.min(40, 20 * p.s)) + 'px Segoe UI'; ctx.textAlign = 'center';
+  ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.strokeText('!', p.sx, p.by - (topY + 3) * p.sv);
+  ctx.fillStyle = '#e23e3e'; ctx.fillText('!', p.sx, p.by - (topY + 3) * p.sv);
+}
+function fpHitFlash(p, h, hy, rx, ry) { if (h.hitFlash > 0) fpOval(p, 0, hy, rx, ry, 'rgba(255,255,255,' + (0.65 * h.hitFlash / 0.15).toFixed(2) + ')'); }
+
+/* ---- Painted sprites ---- */
+// Every creature is painted once into its own little canvas per (look, view, walking frame): shaded, outlined and
+// lit from the upper left, then simply scaled and blitted each frame. The view is front, back or side depending on
+// which way the thing is heading relative to where you're looking, so a zookeeper walking away from you shows you
+// his back and one walking across your path shows a profile. Painters work in world units with the origin at the
+// feet (bottom centre) and y pointing up.
+const FP_SC = 6, FP_FRAMES = 6, FP_LINE = 'rgba(0,0,0,0.38)';
+const fpCache = {};
+function fpSprite(key, wU, hU, paint, sc) {
+  let s = fpCache[key];
+  if (s) return s;
+  sc = sc || FP_SC;
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(wU * sc); cv.height = Math.ceil(hU * sc);
+  const g = cv.getContext('2d');
+  g.setTransform(sc, 0, 0, -sc, cv.width / 2, cv.height);
+  g.lineJoin = 'round'; g.lineCap = 'round';
+  paint(g);
+  return fpCache[key] = { cv, wU: cv.width / sc, hU: cv.height / sc };
+}
+function fpBlit(p, s, flip, xs) {
+  const w = s.wU * p.s * (xs || 1), h = s.hU * p.sv;
+  if (flip) { ctx.save(); ctx.translate(p.sx, 0); ctx.scale(-1, 1); ctx.drawImage(s.cv, -w / 2, p.by - h, w, h); ctx.restore(); }
+  else ctx.drawImage(s.cv, p.sx - w / 2, p.by - h, w, h);
+}
+// Which side of a creature the camera is looking at, and whether a side-on sprite needs mirroring (they're all painted facing right).
+function fpView(heading, yaw, ang) {
+  const rel = normAngle(heading - (yaw + ang)), c = Math.cos(rel);
+  if (c > 0.7) return { v: 'back', flip: false };
+  if (c < -0.7) return { v: 'front', flip: false };
+  return { v: 'side', flip: Math.sin(rel) < 0 };
+}
+function fpFrame(cycles, offset) { return Math.floor((((animTime * cycles + offset) % 1) + 1) % 1 * FP_FRAMES) % FP_FRAMES; }
+function fpSoftShadow(p, rx) {
+  const w = rx * 2.3 * p.s, h = Math.max(2, w * Math.min(0.42, 18 / p.depth));
+  if (!fpCache.shadow) fpSprite('shadow', 4, 2, g => {
+    const gr = g.createRadialGradient(0, 1, 0.1, 0, 1, 1.9); gr.addColorStop(0, 'rgba(0,0,0,0.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.save(); g.translate(0, 1); g.scale(1, 0.5); g.translate(0, -1); g.fillStyle = gr; g.beginPath(); g.arc(0, 1, 1.95, 0, Math.PI * 2); g.fill(); g.restore();
+  }, 24);
+  ctx.drawImage(fpCache.shadow.cv, p.sx - w / 2, p.by - h * 0.62, w, h);
+}
+
+const fpSh = (c, a) => shadeColor(c, a);
+function fpLg(g, x0, y0, x1, y1, stops) { const gr = g.createLinearGradient(x0, y0, x1, y1); stops.forEach(s => gr.addColorStop(s[0], s[1])); return gr; }
+function fpRg(g, x, y, r0, r1, stops) { const gr = g.createRadialGradient(x, y, r0, x, y, r1); stops.forEach(s => gr.addColorStop(s[0], s[1])); return gr; }
+function fpE(g, x, y, rx, ry, fill, rot, line) {
+  g.beginPath(); g.ellipse(x, y, rx, ry, rot || 0, 0, Math.PI * 2); g.fillStyle = fill; g.fill();
+  if (line) { g.strokeStyle = line; g.lineWidth = 0.35; g.stroke(); }
+}
+function fpP(g, pts, fill, line) {
+  g.beginPath(); pts.forEach((q, i) => { if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); }); g.closePath();
+  g.fillStyle = fill; g.fill(); if (line) { g.strokeStyle = line; g.lineWidth = 0.35; g.stroke(); }
+}
+function fpL(g, x0, y0, x1, y1, w, stroke) { g.strokeStyle = stroke; g.lineWidth = w; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+function fpRR(g, x, y, w, h, r, fill, line) {
+  g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r); g.lineTo(x + w, y + h - r);
+  g.quadraticCurveTo(x + w, y + h, x + w - r, y + h); g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+  g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath();
+  g.fillStyle = fill; g.fill(); if (line) { g.strokeStyle = line; g.lineWidth = 0.35; g.stroke(); }
+}
+function fpLimb(g, x0, y0, x1, y1, w, c) {                 // a rounded, lit limb: outline, shadow edge, body, highlight
+  const dx = x1 - x0, dy = y1 - y0, l = Math.hypot(dx, dy) || 1, sg = -dy / l > 0 ? -1 : 1, nx = -dy / l * sg, ny = dx / l * sg;
+  fpL(g, x0, y0, x1, y1, w + 0.6, FP_LINE);
+  fpL(g, x0, y0, x1, y1, w, fpSh(c, -0.14));
+  fpL(g, x0 + nx * w * 0.16, y0 + ny * w * 0.16, x1 + nx * w * 0.16, y1 + ny * w * 0.16, w * 0.58, c);
+  fpL(g, x0 + nx * w * 0.24, y0 + ny * w * 0.24, x1 + nx * w * 0.24, y1 + ny * w * 0.24, w * 0.2, fpSh(c, 0.28));
+}
+function fpBody(g, x, y, rx, ry, c, rot) {                   // a lit, rounded mass: light on top, shaded underneath
+  fpE(g, x, y, rx, ry, fpLg(g, 0, y + ry, 0, y - ry, [[0, fpSh(c, 0.28)], [0.5, c], [1, fpSh(c, -0.34)]]), rot, FP_LINE);
+}
+
+/* People */
+function fpPersonSprite(look, seed, view, fr) {
+  return fpSprite('P' + look + seed + view + fr, 30, 50, g => {
+    const skin = SKIN_TONES[seed % 4], hair = HAIR_COLORS[(seed >>> 3) % 4], shirt = SHIRT_COLORS[(seed >>> 6) % 5];
+    const o = look === 'zookeeper' ? { top: '#c9b56f', sleeve: '#b8a25e', pants: '#4d6033', shoe: '#3a2a1a' }
+            : look === 'hiker'     ? { top: '#2f7a4d', sleeve: '#286a42', pants: '#6b5a3a', shoe: '#3a2a1a' }
+            :                        { top: shirt, sleeve: shirt, pants: '#2f4a7a', shoe: '#f2f2f2' };
+    const sw = fr < 0 ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 2), hy = 41, back = view === 'back';
+    const hatTop = (cx, tilt) => {
+      if (look === 'zookeeper') {
+        fpE(g, cx, hy + 3.6, 9, 2.1 + tilt, '#b39b55', 0, '#7a6a35');
+        fpBody(g, cx, hy + 5.8, 5.2, 3.3, '#c2ab62');
+        g.fillStyle = '#5a3f1e'; g.fillRect(cx - 5.2, hy + 3.7, 10.4, 1.5);
+      } else if (look === 'hiker') {
+        g.beginPath(); g.ellipse(cx, hy + 2.8, 5.6, 3.9, 0, 0, Math.PI); g.closePath();
+        g.fillStyle = fpLg(g, cx - 5, 0, cx + 5, 0, [[0, '#f08a3a'], [1, '#b85a1a']]); g.fill(); g.strokeStyle = FP_LINE; g.lineWidth = 0.35; g.stroke();
+      }
+    };
+    if (view === 'side') {
+      const leg = (a, c, far) => {
+        const fx = Math.sin(a) * 17.3, fy = 19.5 - Math.cos(a) * 17.3;
+        fpLimb(g, 0, 19.5, fx, fy + 1, 5, far ? fpSh(c, -0.28) : c);
+        fpE(g, fx + 1.5, fy - 0.5, 3.5, 1.7, far ? fpSh(o.shoe, -0.28) : o.shoe, 0, FP_LINE);
+      };
+      const arm = (a, far) => {
+        const hx = Math.sin(a) * 12.5, hyy = 33 - Math.cos(a) * 12.5;
+        fpLimb(g, 0, 33, hx, hyy + 1, 3.8, far ? fpSh(o.sleeve, -0.28) : o.sleeve);
+        fpE(g, hx, hyy, 1.9, 2.1, far ? fpSh(skin, -0.28) : skin, 0, FP_LINE);
+      };
+      leg(-sw * 0.55, o.pants, true); arm(sw * 0.6, true);
+      if (look === 'hiker') { fpRR(g, -9.4, 19.5, 5.6, 16.5, 1.6, fpLg(g, -9.4, 0, -3.8, 0, [[0, '#b86a35'], [1, '#6f3a18']]), FP_LINE); fpRR(g, -9.8, 21, 3, 6, 1, '#7a4220', FP_LINE); }
+      leg(sw * 0.55, o.pants, false);
+      g.beginPath(); g.moveTo(-4.6, 19.5); g.quadraticCurveTo(-5.4, 27, -4.4, 33.4); g.quadraticCurveTo(0, 35.6, 4.4, 33.4); g.quadraticCurveTo(5, 26, 4.4, 19.5); g.closePath();
+      g.fillStyle = fpLg(g, -4.6, 0, 4.6, 0, [[0, fpSh(o.top, 0.22)], [0.55, o.top], [1, fpSh(o.top, -0.3)]]); g.fill(); g.strokeStyle = FP_LINE; g.lineWidth = 0.35; g.stroke();
+      if (look === 'zookeeper') { g.fillStyle = '#5a3f1e'; g.fillRect(-4.6, 20, 9.2, 1.7); fpRR(g, 0.6, 27, 3, 3.2, 0.5, fpSh(o.top, -0.15), FP_LINE); }
+      arm(-sw * 0.6, false);
+      fpE(g, 0.4, 34.8, 2.2, 2.1, fpSh(skin, -0.12));
+      fpBody(g, 0.8, hy, 4.9, 5.6, skin);
+      fpP(g, [[5.0, hy - 0.4], [6.7, hy - 1.9], [5.1, hy - 2.6]], fpSh(skin, -0.1), FP_LINE);
+      fpE(g, 2.9, hy - 0.5, 0.95, 0.75, '#fff'); fpE(g, 3.15, hy - 0.5, 0.5, 0.5, '#2a1a10');
+      fpE(g, -0.9, hy - 1, 1, 1.5, fpSh(skin, -0.16), 0, FP_LINE);
+      g.strokeStyle = '#8a3a3a'; g.lineWidth = 0.35; g.beginPath(); g.moveTo(3.4, hy - 3.7); g.lineTo(5, hy - 3.5); g.stroke();
+      fpE(g, -0.7, hy + 1.2, 4.7, 4.5, fpLg(g, 0, hy + 5, 0, hy - 3, [[0, fpSh(hair, 0.3)], [1, hair]]));
+      fpE(g, 3.2, hy + 4.3, 2.2, 1.1, hair);
+      hatTop(0.7, -0.3);
+      if (look === 'hiker') fpE(g, 6.2, hy + 3.1, 3.6, 0.9, '#b85a1a', 0, FP_LINE);
+      return;
+    }
+    const fl = Math.max(0, sw) * 2.4, fr2 = Math.max(0, -sw) * 2.4;
+    [[-3.1, fl], [3.1, fr2]].forEach(([x, lift]) => {
+      fpLimb(g, x, 19.5, x, 2.8 + lift, 5.2, o.pants);
+      fpE(g, x, 1.6 + lift, 3.5, 1.9, o.shoe, 0, FP_LINE);
+      if (!back) fpE(g, x, 2.1 + lift, 2.4, 1.1, fpSh(o.shoe, 0.25));
+    });
+    g.beginPath(); g.moveTo(-7.4, 33); g.quadraticCurveTo(-7.8, 27, -6.4, 19); g.lineTo(6.4, 19); g.quadraticCurveTo(7.8, 27, 7.4, 33); g.quadraticCurveTo(0, 35.4, -7.4, 33); g.closePath();
+    g.fillStyle = fpLg(g, -7.4, 0, 7.4, 0, [[0, fpSh(o.top, 0.24)], [0.5, o.top], [1, fpSh(o.top, -0.34)]]); g.fill(); g.strokeStyle = FP_LINE; g.lineWidth = 0.35; g.stroke();
+    if (look === 'zookeeper') {
+      g.fillStyle = '#5a3f1e'; g.fillRect(-6.4, 19.6, 12.8, 1.8); g.fillStyle = '#d8b850'; g.fillRect(-1, 19.7, 2, 1.6);
+      if (!back) [-1, 1].forEach(sd => { fpRR(g, sd * 3.6 - 1.8, 26.4, 3.6, 3.8, 0.6, fpSh(o.top, -0.12), FP_LINE); });
+    } else if (look === 'hiker') {
+      if (!back) [-1, 1].forEach(sd => fpL(g, sd * 3.8, 33.5, sd * 3.2, 20, 1.5, '#1d4d30'));
+      else { fpRR(g, -6.6, 19, 13.2, 17, 2, fpLg(g, -6.6, 0, 6.6, 0, [[0, '#c4763c'], [1, '#6f3a18']]), FP_LINE); fpRR(g, -4, 21, 8, 5.5, 1, '#8a4b25', FP_LINE); fpL(g, -6.6, 33, -6.6, 24, 1, '#1d1d1d'); }
+    } else if (!back) { g.strokeStyle = fpSh(o.top, -0.35); g.lineWidth = 0.4; g.beginPath(); g.moveTo(-2.2, 34.4); g.lineTo(0, 31.2); g.lineTo(2.2, 34.4); g.stroke(); }
+    [[-1, sw], [1, -sw]].forEach(([sd, s]) => {
+      const hand = 22.6 + s * 1.8, x = sd * 9;
+      fpLimb(g, x, 32.6, x + sd * 0.5, hand + 1.6, 3.9, o.sleeve);
+      fpE(g, x + sd * 0.5, hand, 1.9, 2.1, skin, 0, FP_LINE);
+    });
+    fpE(g, 0, 34.8, 2.4, 2.2, fpSh(skin, -0.14));
+    [-1, 1].forEach(sd => fpE(g, sd * 5, hy - 0.3, 1, 1.5, fpSh(skin, -0.1), 0, FP_LINE));
+    if (back) {
+      fpBody(g, 0, hy, 5, 5.7, hair);
+      fpE(g, -1.3, hy + 2.6, 1.6, 1.4, fpSh(hair, 0.32));
+    } else {
+      fpE(g, 0, hy, 5, 5.7, fpRg(g, -1.6, hy + 1.8, 0.4, 7, [[0, fpSh(skin, 0.22)], [1, fpSh(skin, -0.2)]]), 0, FP_LINE);
+      fpE(g, 0, hy + 4.4, 5.3, 3.8, fpLg(g, 0, hy + 8, 0, hy + 1, [[0, fpSh(hair, 0.3)], [1, hair]]));
+      [-1, 1].forEach(sd => { fpE(g, sd * 2.1, hy - 1.1, 1.2, 0.82, '#fff'); fpE(g, sd * 2.1, hy - 1.1, 0.55, 0.55, '#2a1a10'); fpE(g, sd * 2.1 - 0.2, hy - 0.9, 0.2, 0.2, '#fff'); });
+      fpE(g, 0, hy - 2.6, 0.9, 1.1, fpSh(skin, -0.2)); g.strokeStyle = '#8a3a3a'; g.lineWidth = 0.4; g.beginPath(); g.moveTo(-1.2, hy - 4); g.lineTo(1.2, hy - 4); g.stroke();
+    }
+    hatTop(0, 0);
+    if (look === 'hiker' && !back) fpE(g, 0, hy + 2.6, 4.8, 0.9, '#b85a1a', 0, FP_LINE);
+  });
+}
+function fpPerson(p, h, yaw) {
+  const look = h.look || 'pedestrian', seed = personSeed(h), vw = fpView(h.angle, yaw, p.ang), walking = h.wmode === 'walk' && !h.dead;
+  fpSoftShadow(p, 9);
+  fpBlit(p, fpPersonSprite(look, seed, vw.v, walking ? fpFrame(1.5, (seed % 100) / 100) : -1), vw.flip);
+  fpHitFlash(p, h, 22, 13, 25);
+  if (h.alert) fpAlertMark(p, 50);
+}
+
+/* Dogs, cows and reindeer */
+function fpDogSprite(view, fr, al) {
+  return fpSprite('D' + view + fr + al, 38, 30, g => {
+    const fur = '#c68a4e', furD = '#8f5d30', furL = '#e8bd86', paw = '#4a3320', sw = fr < 0 ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 2);
+    const wag = (fr < 0 && !al) ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 4) * (al ? 3 : 1.6);
+    if (view === 'side') {
+      const leg = (x, a, c) => { const fx = x + Math.sin(a) * 9.4, fy = 11.5 - Math.cos(a) * 9.4; fpLimb(g, x, 11.5, fx, fy + 1, 3.2, c); fpE(g, fx + 0.8, fy - 0.4, 2, 1.15, paw, 0, FP_LINE); };
+      g.strokeStyle = FP_LINE; g.lineWidth = 3; g.beginPath(); g.moveTo(-11, 15); g.quadraticCurveTo(-16, 16 + wag * 0.3, -15.4 + wag * 0.5, 23); g.stroke();
+      g.strokeStyle = fur; g.lineWidth = 2.3; g.stroke(); g.strokeStyle = furL; g.lineWidth = 0.9; g.stroke();
+      leg(6.2, -sw * 0.6, furD); leg(-6.2, sw * 0.6, furD);
+      fpBody(g, -0.5, 14, 12, 6.2, fur);
+      fpE(g, 8.2, 13.4, 5.6, 6, fpLg(g, 0, 20, 0, 7, [[0, fur], [1, furD]]));
+      fpE(g, 1, 11.2, 7.5, 2.6, fpSh(furL, 0.1));
+      leg(8.2, sw * 0.6, fur); leg(-8.2, -sw * 0.6, fur);
+      fpP(g, [[8.4, 20.6], [11.2, 20.6], [10.8, 14.3], [8, 14.3]], '#c8261f'); fpE(g, 9.8, 13.8, 0.8, 0.8, '#e8c34a');
+      fpBody(g, 13.2, 19.4, 5.3, 4.7, fur);
+      fpE(g, 18.2, 17.8, 3.7, 2.2, '#ecd2a6', 0, FP_LINE); fpE(g, 21.6, 18.4, 1.3, 1, '#16100b');
+      if (al) { fpP(g, [[16.6, 16.5], [21.4, 16.2], [19.4, 14.3], [16.8, 14.8]], '#7a1d1d'); fpE(g, 19, 14.8, 1.4, 0.8, '#e8828c'); }
+      else { g.strokeStyle = '#4a3320'; g.lineWidth = 0.3; g.beginPath(); g.moveTo(16.2, 16.6); g.lineTo(20.4, 16.6); g.stroke(); }
+      fpE(g, 14.8, 20.8, 0.85, 0.85, '#16100b'); fpE(g, 14.55, 21.05, 0.28, 0.28, '#fff');
+      if (al) fpP(g, [[11.2, 22], [11.4, 27.2], [13.7, 23]], furD, FP_LINE); else fpE(g, 11.4, 19.6, 1.7, 3, furD, 0.3, FP_LINE);
+      return;
+    }
+    const front = view === 'front';
+    if (!front) { g.strokeStyle = FP_LINE; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 15); g.quadraticCurveTo(wag * 0.5, 19, wag, 24); g.stroke(); g.strokeStyle = fur; g.lineWidth = 2.3; g.stroke(); g.strokeStyle = furL; g.lineWidth = 0.9; g.stroke(); }
+    [-1, 1].forEach(sd => { const lift = Math.max(0, sd * sw) * 1.4; fpLimb(g, sd * 4.4, 9, sd * 4.6, 1.8 + lift, 3.5, front ? fur : furD); fpE(g, sd * 4.6, 1 + lift, 2.3, 1.2, paw, 0, FP_LINE); });
+    fpBody(g, 0, 13, front ? 7.2 : 8, front ? 7.8 : 7.4, fur);
+    if (front) {
+      fpE(g, 0, 11, 3.4, 5.2, furL);
+      fpP(g, [[-6, 15.4], [6, 15.4], [5.6, 13.6], [-5.6, 13.6]], '#c8261f'); fpE(g, 0, 13.2, 0.8, 0.8, '#e8c34a');
+      fpBody(g, 0, 19.6, 5.5, 5, fur);
+      fpE(g, 0, 17.4, 2.9, 2.5, '#ecd2a6', 0, FP_LINE); fpE(g, 0, 18.6, 1.4, 1, '#16100b');
+      if (al) { fpE(g, 0, 15.8, 1.3, 1.1, '#7a1d1d'); fpE(g, 0, 15.2, 0.9, 0.7, '#e8828c'); } else { g.strokeStyle = '#4a3320'; g.lineWidth = 0.3; g.beginPath(); g.moveTo(-1.4, 16.4); g.lineTo(1.4, 16.4); g.stroke(); }
+      [-1, 1].forEach(sd => {
+        fpE(g, sd * 2.3, 21, 0.85, 0.85, '#16100b'); fpE(g, sd * 2.3 - 0.25, 21.25, 0.28, 0.28, '#fff');
+        if (al) fpP(g, [[sd * 3.6, 23], [sd * 6.4, 28], [sd * 5.6, 22]], furD, FP_LINE); else fpE(g, sd * 5.6, 19.4, 1.6, 3.3, furD, sd * 0.25, FP_LINE);
+      });
+    } else {
+      fpBody(g, 0, 21.2, 4.6, 3.6, fur);
+      [-1, 1].forEach(sd => { if (al) fpP(g, [[sd * 2.4, 23], [sd * 5.2, 28], [sd * 4.6, 22]], furD, FP_LINE); else fpE(g, sd * 4.8, 20.6, 1.5, 3, furD, sd * 0.25, FP_LINE); });
+    }
+  });
+}
+function fpDog(p, h, yaw) {
+  const vw = fpView(h.angle, yaw, p.ang), al = h.alert ? 1 : 0, walking = h.wmode === 'walk' && !h.dead, ph = (h.pts[0].x * 0.013 + h.pts[0].y * 0.007) % 1;
+  fpSoftShadow(p, 11);
+  fpBlit(p, fpDogSprite(vw.v, walking ? fpFrame(2.6, ph) : -1, al), vw.flip);
+  fpHitFlash(p, h, 13, 11, 13);
+  if (h.alert) fpAlertMark(p, 30);
+}
+
+function fpCowSprite(view, fr, seed) {
+  return fpSprite('C' + view + fr + seed, 48, 44, g => {
+    const wh = '#f4f2ee', pink = '#e9a3a8', dark = '#2b2b30', sw = fr < 0 ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 2), rnd = makeRng(seed + 11);
+    const patches = (cx, cy, rx, ry, n) => {
+      g.save(); g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.clip();
+      for (let i = 0; i < n; i++) {
+        const bx = cx + (rnd() * 2 - 1) * rx * 0.8, by = cy + (rnd() * 2 - 1) * ry * 0.7, br = 2.4 + rnd() * 3.4;
+        g.beginPath(); for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, rr = br * (0.65 + rnd() * 0.55); const qx = bx + Math.cos(a) * rr * 1.2, qy = by + Math.sin(a) * rr; if (k) g.lineTo(qx, qy); else g.moveTo(qx, qy); }
+        g.closePath(); g.fillStyle = dark; g.fill();
+      }
+      g.restore();
+    };
+    if (view === 'side') {
+      const leg = (x, a, c) => { const fx = x + Math.sin(a) * 11, fy = 12.5 - Math.cos(a) * 11; fpLimb(g, x, 12.5, fx, fy + 1.2, 3.8, c); fpP(g, [[fx - 1.9, fy + 1.6], [fx + 1.9, fy + 1.6], [fx + 2.1, fy - 0.2], [fx - 1.9, fy - 0.2]], '#4a4040', FP_LINE); };
+      g.strokeStyle = FP_LINE; g.lineWidth = 1.5; g.beginPath(); g.moveTo(-16, 27); g.quadraticCurveTo(-19.2, 20, -18, 12); g.stroke(); g.strokeStyle = '#d8d4cc'; g.lineWidth = 0.9; g.stroke(); fpE(g, -18, 11, 1.4, 2.4, dark);
+      leg(8, -sw * 0.5, '#cfcbc3'); leg(-10, sw * 0.5, '#cfcbc3');
+      fpBody(g, -1, 20, 16, 9.4, wh); patches(-1, 20, 16, 9.4, 4);
+      fpE(g, -7, 12.4, 3.2, 2.6, pink, 0, FP_LINE);
+      leg(11, sw * 0.5, wh); leg(-7, -sw * 0.5, wh);
+      fpP(g, [[12, 28], [18, 25.5], [18, 17], [11, 15]], fpLg(g, 0, 28, 0, 15, [[0, '#f8f6f2'], [1, '#c9c5bd']]), FP_LINE);
+      fpBody(g, 18.2, 22.6, 5.6, 4.9, wh);
+      fpE(g, 17, 25, 2.6, 2.2, dark);
+      fpE(g, 21.8, 19.6, 3.4, 2.7, pink, 0, FP_LINE); fpE(g, 23.4, 20, 0.6, 0.45, '#8a4a50');
+      fpE(g, 18.9, 24.2, 0.85, 0.85, '#16100b'); fpE(g, 18.7, 24.4, 0.3, 0.3, '#fff');
+      fpE(g, 14.6, 25.4, 2.4, 1.2, '#f2b4b8', -0.4, FP_LINE);
+      g.strokeStyle = '#e8dcc0'; g.lineWidth = 1.1; g.beginPath(); g.moveTo(16.4, 27); g.quadraticCurveTo(15.6, 30.4, 18, 31.4); g.stroke();
+      return;
+    }
+    const front = view === 'front';
+    [-1, 1].forEach(sd => { const lift = Math.max(0, sd * sw) * 1.6; fpLimb(g, sd * 5.2, 12, sd * 5.4, 2 + lift, 4, '#e2dfd8'); fpP(g, [[sd * 5.4 - 2, 2.4 + lift], [sd * 5.4 + 2, 2.4 + lift], [sd * 5.4 + 2.2, 0.4 + lift], [sd * 5.4 - 2.2, 0.4 + lift]], '#4a4040', FP_LINE); });
+    fpBody(g, 0, 20, front ? 10 : 11.2, front ? 10.6 : 10, wh);
+    patches(0, 20, front ? 10 : 11.2, front ? 10.6 : 10, 4);
+    if (front) {
+      fpBody(g, 0, 25.6, 5.4, 6.2, wh);
+      fpE(g, 0, 29.6, 3.4, 2.2, dark);
+      fpE(g, 0, 21.7, 3.9, 2.9, pink, 0, FP_LINE); [-1, 1].forEach(sd => fpE(g, sd * 1.5, 21.9, 0.55, 0.75, '#8a4a50'));
+      [-1, 1].forEach(sd => {
+        fpE(g, sd * 3.3, 27, 0.85, 0.85, '#16100b'); fpE(g, sd * 3.3 - 0.25, 27.25, 0.28, 0.28, '#fff');
+        fpE(g, sd * 7.3, 27.4, 2.8, 1.3, '#f2b4b8', sd * -0.25, FP_LINE);
+        g.strokeStyle = '#e8dcc0'; g.lineWidth = 1.1; g.beginPath(); g.moveTo(sd * 3.7, 30.6); g.quadraticCurveTo(sd * 6.8, 31.4, sd * 6.4, 34.6); g.stroke();
+      });
+    } else {
+      fpE(g, 0, 11.6, 3.6, 2.6, pink, 0, FP_LINE);
+      g.strokeStyle = FP_LINE; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, 27); g.lineTo(0, 12.6); g.stroke(); g.strokeStyle = '#d8d4cc'; g.lineWidth = 0.9; g.stroke(); fpE(g, 0, 11.4, 1.3, 2.4, dark);
+      [-1, 1].forEach(sd => { fpE(g, sd * 7.6, 31.6, 2.6, 1.2, '#f2b4b8', 0, FP_LINE); g.strokeStyle = '#e8dcc0'; g.lineWidth = 1.1; g.beginPath(); g.moveTo(sd * 4, 31); g.quadraticCurveTo(sd * 6.6, 32, sd * 6.2, 35); g.stroke(); });
+    }
+  });
+}
+function fpCow(p, h, yaw) {
+  const vw = fpView(h.angle, yaw, p.ang), walking = h.wmode === 'walk' && !h.dead, seed = Math.abs(Math.round(h.pts[0].x * 7 + h.pts[0].y * 13)) % 997;
+  fpSoftShadow(p, 17);
+  fpBlit(p, fpCowSprite(vw.v, walking ? fpFrame(1, seed / 997) : -1, seed), vw.flip);
+  fpHitFlash(p, h, 18, 19, 18);
+  if (h.alert) fpAlertMark(p, 38);
+}
+
+function fpReindeerSprite(view, fr) {
+  return fpSprite('R' + view + fr, 40, 66, g => {
+    const coat = '#7c6249', coatD = '#4f3c2a', coatL = '#a58b6f', pale = '#e6dccb', ant = '#d3c298', sw = fr < 0 ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 2);
+    const antlers = (ox, oy, sd, sc) => {                                   // a main beam sweeping up, with tines branching off it
+      g.strokeStyle = ant; g.lineWidth = 0.95;
+      const beam = [[0, 0], [1.4, 4], [3.4, 8], [4.2, 13]];
+      g.beginPath(); beam.forEach((q, i) => { const X = ox + q[0] * sd * sc, Y = oy + q[1] * sc; if (i) g.lineTo(X, Y); else g.moveTo(X, Y); }); g.stroke();
+      [[1.4, 4, 4.8, 6.2], [3.4, 8, 7, 10.4], [3.4, 8, 1.8, 11.6], [4.2, 13, 6.4, 15.4]].forEach(t => { g.beginPath(); g.moveTo(ox + t[0] * sd * sc, oy + t[1] * sc); g.lineTo(ox + t[2] * sd * sc, oy + t[3] * sc); g.stroke(); });
+    };
+    if (view === 'side') {
+      const leg = (x, a, c) => { const mx = x + Math.sin(a) * 6, my = 25 - Math.cos(a) * 6.5, fx = mx + Math.sin(a * 0.5) * 1, fy = my - 8.4; fpLimb(g, x, 25, mx, my, 2.8, c); fpLimb(g, mx, my, fx, fy + 1.2, 2, fpSh(c, -0.1)); fpE(g, fx + 0.5, fy, 1.3, 0.8, '#2c2218'); };
+      leg(8, -sw * 0.5, coatD); leg(-9, sw * 0.5, coatD);
+      fpBody(g, -1, 28, 12.6, 7, coat);
+      fpE(g, -9, 28.6, 4.4, 5, pale);
+      g.fillStyle = pale; fpE(g, -13.2, 31, 1.6, 2.4, pale, -0.4, FP_LINE);
+      leg(9.6, sw * 0.5, coat); leg(-7, -sw * 0.5, coat);
+      fpP(g, [[6, 31], [10.8, 43], [14.4, 41.6], [11, 26.4]], fpLg(g, 6, 0, 14, 0, [[0, coatL], [1, coat]]), FP_LINE);
+      fpE(g, 10.6, 27.4, 3.6, 3.8, '#f1ead9');
+      fpBody(g, 15.4, 44.4, 4.6, 3.3, coat, -0.3);
+      fpE(g, 19.3, 42.6, 3, 2, '#d8cbb2', -0.3, FP_LINE); fpE(g, 21.8, 42.6, 0.85, 0.7, '#1c130c');
+      fpE(g, 16.2, 45.4, 0.8, 0.8, '#16100b'); fpE(g, 16, 45.6, 0.26, 0.26, '#fff');
+      fpE(g, 12.8, 47, 2.2, 1, coatL, 0.7, FP_LINE);
+      antlers(13.4, 47, -1, 1); antlers(14.6, 47.4, 1, 1);
+      return;
+    }
+    const front = view === 'front';
+    [-1, 1].forEach(sd => { const lift = Math.max(0, sd * sw) * 1.6; fpLimb(g, sd * 3.6, 25, sd * 3.8, 2.2 + lift, 2.8, front ? coat : coatD); fpE(g, sd * 3.8, 1.4 + lift, 1.5, 1, '#2c2218'); });
+    if (!front) fpP(g, [[-2.8, 30], [2.8, 30], [2.2, 42], [-2.2, 42]], fpLg(g, -3, 0, 3, 0, [[0, coatL], [1, coatD]]), FP_LINE);   // the neck, seen from behind
+    fpBody(g, 0, 28, front ? 7 : 7.6, front ? 8 : 7.4, coat);
+    if (front) {
+      fpE(g, 0, 26.6, 3.6, 6.4, '#e6dccb');
+      fpP(g, [[-3, 33], [3, 33], [2.4, 42], [-2.4, 42]], fpLg(g, -3, 0, 3, 0, [[0, coatL], [1, coatD]]), FP_LINE);
+      fpBody(g, 0, 45, 3.4, 4.4, coat);
+      fpE(g, 0, 41.6, 2.4, 1.9, '#d8cbb2', 0, FP_LINE); fpE(g, 0, 41.2, 1.1, 0.8, '#1c130c');
+      [-1, 1].forEach(sd => { fpE(g, sd * 2.2, 46, 0.78, 0.78, '#16100b'); fpE(g, sd * 2.2 - 0.2, 46.2, 0.26, 0.26, '#fff'); fpE(g, sd * 4.6, 47.4, 2.3, 0.95, coatL, sd * 0.5, FP_LINE); antlers(sd * 2.2, 49.2, sd, 1.15); });
+    } else {
+      fpE(g, 0, 28, 5, 5.4, pale); fpE(g, 0, 31, 1.4, 2.4, '#f1ead9', 0, FP_LINE);
+      fpBody(g, 0, 43, 3.2, 3.8, coat);
+      [-1, 1].forEach(sd => { fpE(g, sd * 4.4, 45, 2.2, 0.95, coatL, sd * 0.5, FP_LINE); antlers(sd * 2.2, 46.4, sd, 1.15); });
+    }
+  });
+}
+function fpReindeer(p, h, yaw) {
+  const vw = fpView(h.angle, yaw, p.ang), walking = h.wmode === 'walk' && !h.dead;
+  fpSoftShadow(p, 13);
+  fpBlit(p, fpReindeerSprite(vw.v, walking ? fpFrame(1.3, (h.pts[0].x % 7) / 7) : -1), vw.flip);
+  fpHitFlash(p, h, 28, 14, 28);
+  if (h.alert) fpAlertMark(p, 64);
+}
+
+/* Baby capybaras */
+function fpBabySprite(view, fr) {
+  return fpSprite('B' + view + fr, 26, 20, g => {
+    const fur = '#e0b988', furD = '#a87a4e', furL = '#f0d4aa', foot = '#3f2a19', ear = '#5a3a20', sw = fr < 0 ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 2);
+    if (view === 'side') {
+      [[4, sw, true], [-6, -sw, true], [5, -sw, false], [-5, sw, false]].forEach(([x, a, far]) => { fpE(g, x + a * 1.2, 0.9 + Math.max(0, a) * 0.7, 2.3, 1.1, far ? '#2a1a0e' : foot, 0, FP_LINE); });
+      fpBody(g, -1.6, 7, 9.4, 6.3, fur);
+      fpE(g, -2.6, 4.6, 6, 2.2, fpSh(furL, 0.05));
+      g.strokeStyle = 'rgba(80,50,22,0.3)'; g.lineWidth = 0.25; for (let i = 0; i < 9; i++) { g.beginPath(); g.moveTo(-8 + i * 1.5, 11.2 - (i % 3) * 0.4); g.lineTo(-7.4 + i * 1.5, 9.6 - (i % 3) * 0.4); g.stroke(); }
+      fpBody(g, 7.4, 8.8, 5.7, 5.2, fur);
+      fpBody(g, 11.6, 7.8, 3.8, 3.7, fur);
+      fpE(g, 14.1, 8.6, 1.2, 1.7, '#3a2a22'); fpE(g, 14, 9.2, 0.35, 0.35, '#7a6a62');
+      fpE(g, 9.6, 10.6, 0.8, 0.8, '#16100b'); fpE(g, 9.4, 10.8, 0.27, 0.27, '#fff');
+      fpE(g, 5.2, 12.6, 1.8, 1.4, ear, 0, FP_LINE); fpE(g, 5.3, 12.5, 0.8, 0.6, '#8a5f42');
+      g.strokeStyle = 'rgba(40,24,12,0.5)'; g.lineWidth = 0.22; g.beginPath(); g.moveTo(12.4, 6.6); g.lineTo(14.6, 6.2); g.moveTo(12.4, 6.1); g.lineTo(14.4, 5.4); g.stroke();
+      return;
+    }
+    const front = view === 'front';
+    [-1, 1].forEach(sd => fpE(g, sd * 3.8 + sd * Math.max(0, sd * sw) * 0.4, 1 + Math.max(0, sd * sw) * 0.6, 2.2, 1.1, foot, 0, FP_LINE));
+    fpBody(g, 0, 7, 8, 6.3, fur);
+    if (front) {
+      fpBody(g, 0, 9.4, 6.2, 5.4, fur);
+      fpE(g, 0, 7.4, 3.5, 2.7, '#e9c898', 0, FP_LINE); fpE(g, 0, 8.4, 1.7, 1.1, '#3a2a22');
+      [-1, 1].forEach(sd => { fpE(g, sd * 3.3, 11.2, 0.8, 0.8, '#16100b'); fpE(g, sd * 3.3 - 0.2, 11.4, 0.27, 0.27, '#fff'); fpE(g, sd * 4.4, 14.1, 1.7, 1.4, ear, 0, FP_LINE); fpE(g, sd * 4.4, 14, 0.8, 0.6, '#8a5f42'); });
+    } else {
+      fpBody(g, 0, 11.4, 4.8, 4, furD);
+      [-1, 1].forEach(sd => fpE(g, sd * 4.2, 14, 1.7, 1.4, ear, 0, FP_LINE));
+      fpE(g, 0, 4, 2.8, 1.4, '#c89a66');
+    }
+  });
+}
+function fpBaby(p, f, face, moving, yaw, loose) {
+  const vw = fpView(face === undefined ? 0 : face, yaw, p.ang), t = animTime + (f.ph || 0), hop = moving ? Math.abs(Math.sin(t * 12)) * 1.4 : 0;
+  fpSoftShadow(p, 7);
+  const q = { sx: p.sx, by: p.by - hop * p.sv, s: p.s, sv: p.sv };
+  fpBlit(q, fpBabySprite(vw.v, moving ? fpFrame(2.6, (f.ph || 0) / 6.3) : -1), vw.flip);
+  if (loose) {                                                  // a loose one: a little heart floats above
+    ctx.font = 'bold ' + Math.max(10, Math.min(28, 9 * p.s)) + 'px Segoe UI'; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,90,150,0.95)'; ctx.fillText('♥', p.sx, p.by - (23 + Math.sin(t * 2) * 1.2) * p.sv);
+  }
+}
+
+/* Cars */
+function fpCarSprite(kind, color, view) {
+  return fpSprite('V' + kind + color + view, view === 'side' ? 66 : 38, 32, g => {
+    const van = kind === 'van', tall = van ? 28 : 23;
+    if (view === 'side') {
+      const wheel = x => { fpE(g, x, 4.4, 4.7, 4.7, '#15151a', 0, null); fpE(g, x, 4.4, 2.5, 2.5, fpRg(g, x - 0.4, 4.8, 0.2, 2.6, [[0, '#e8e8ec'], [1, '#8a8a92']])); };
+      fpE(g, 0, 1, 31, 1.2, 'rgba(0,0,0,0.3)');
+      fpP(g, [[-31, 4], [-31.2, 12], [-28, 14], [28, 14], [31.2, 11.6], [31, 4]], fpLg(g, 0, 14, 0, 3, [[0, fpSh(color, 0.3)], [0.55, color], [1, fpSh(color, -0.42)]]), FP_LINE);
+      if (van) fpP(g, [[-30, 14], [-30, tall], [8, tall], [12, 20], [24, 18], [24, 14]], fpLg(g, 0, tall, 0, 14, [[0, fpSh(color, 0.2)], [1, color]]), FP_LINE);
+      else fpP(g, [[-16, 14], [-12, tall], [11, tall], [19, 14]], fpLg(g, 0, tall, 0, 14, [[0, fpSh(color, 0.22)], [1, color]]), FP_LINE);
+      const win = van ? [[10.6, 18.6], [10.6, 14.6], [22, 14.6], [18.6, 18.6]] : [[-12.4, 15.2], [-9.4, 21.4], [-0.6, 21.4], [-0.6, 15.2]];
+      fpP(g, win, fpLg(g, 0, 22, 0, 15, [[0, '#d6ecfb'], [1, '#6b94b4']]), FP_LINE);
+      if (!van) { fpP(g, [[1.4, 15.2], [1.4, 21.4], [10.4, 21.4], [15.6, 15.2]], fpLg(g, 0, 22, 0, 15, [[0, '#d6ecfb'], [1, '#6b94b4']]), FP_LINE); g.strokeStyle = fpSh(color, -0.4); g.lineWidth = 0.4; g.beginPath(); g.moveTo(0.4, 14); g.lineTo(0.4, 21.6); g.stroke(); }
+      g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 0.5; g.beginPath(); g.moveTo(-28, 12.4); g.lineTo(27, 12.4); g.stroke();
+      fpE(g, 29.6, 9.4, 1.9, 1.3, '#fff3b0', 0, FP_LINE); fpE(g, -30.2, 9.6, 1.3, 1.5, '#d8281f', 0, FP_LINE);
+      fpRR(g, -32, 3.6, 3.2, 2.6, 0.8, '#b9b9c2', FP_LINE); fpRR(g, 28.8, 3.6, 3.4, 2.6, 0.8, '#b9b9c2', FP_LINE);
+      wheel(-19); wheel(19);
+      if (kind === 'taxi') { fpRR(g, -4.4, tall, 8.8, 3, 0.8, '#fff3a0', FP_LINE); g.fillStyle = '#222'; for (let i = 0; i < 6; i++) g.fillRect(-12 + i * 1.8 + (i % 2) * 0, 11.2, 0.9, 0.9); }
+      return;
+    }
+    const front = view === 'front';
+    fpE(g, 0, 1, 17, 1.2, 'rgba(0,0,0,0.3)');
+    [-1, 1].forEach(sd => fpRR(g, sd * 13 - 2, 0.4, 4, 6.4, 1, '#15151a'));
+    fpP(g, [[-16, 4], [-16.4, 12], [-14, 14], [14, 14], [16.4, 12], [16, 4]], fpLg(g, -16, 0, 16, 0, [[0, fpSh(color, 0.22)], [0.5, color], [1, fpSh(color, -0.34)]]), FP_LINE);
+    fpP(g, [[-13, 14], [-11, tall], [11, tall], [13, 14]], fpLg(g, -12, 0, 12, 0, [[0, fpSh(color, 0.2)], [0.5, color], [1, fpSh(color, -0.3)]]), FP_LINE);
+    fpP(g, [[-10.4, 15], [-9, tall - 1.8], [9, tall - 1.8], [10.4, 15]], fpLg(g, 0, tall, 0, 15, [[0, '#d6ecfb'], [1, '#6b94b4']]), FP_LINE);
+    if (front) {
+      [-1, 1].forEach(sd => { fpE(g, sd * 11.2, 9.2, 2.3, 1.7, '#fff3b0', 0, FP_LINE); });
+      fpRR(g, -6, 5.6, 12, 4.4, 1, '#26262c', FP_LINE); g.strokeStyle = '#555'; g.lineWidth = 0.3; for (let i = -4; i <= 4; i += 2) { g.beginPath(); g.moveTo(i, 6); g.lineTo(i, 9.6); g.stroke(); }
+      fpRR(g, -14, 3.2, 28, 2.2, 0.8, '#b9b9c2', FP_LINE);
+    } else {
+      [-1, 1].forEach(sd => fpRR(g, sd * 10.6 - 2.2, 8.2, 4.4, 2.4, 0.8, '#d8281f', FP_LINE));
+      fpRR(g, -4, 5.4, 8, 3.4, 0.5, '#f4f4f4', FP_LINE); fpRR(g, -14, 3.2, 28, 2.2, 0.8, '#b9b9c2', FP_LINE);
+    }
+    if (kind === 'taxi') fpRR(g, -4.4, tall, 8.8, 3, 0.8, '#fff3a0', FP_LINE);
+  });
+}
+function fpCar(p, v, ex, ey, yaw) {
+  const vw = fpView(v.dir > 0 ? 0 : Math.PI, yaw, p.ang), a = Math.atan2(v.y + v.h / 2 - ey, v.x + v.w / 2 - ex);
+  const wApp = Math.abs(v.w * Math.sin(a - (v.dir > 0 ? 0 : Math.PI))) + Math.abs(v.h * Math.cos(a - (v.dir > 0 ? 0 : Math.PI)));
+  fpSoftShadow(p, v.w * 0.58);
+  if (vw.v === 'side') fpBlit(p, fpCarSprite(v.kind, v.color, 'side'), vw.flip);
+  else fpBlit(p, fpCarSprite(v.kind, v.color, vw.v), false, Math.max(0.8, Math.min(1.5, wApp / 34)));
+}
+
+/* Trees */
+function fpTreeSprite(kind, variant) {
+  return fpSprite('T' + kind + variant, 64, 96, g => {
+    const pal = TREE_PALETTES[variant % TREE_PALETTES.length], rnd = makeRng(variant * 313 + (kind === 'pine' ? 7 : 3));
+    fpP(g, [[-3.6, 0], [-2.4, 28], [2.4, 28], [3.6, 0]], fpLg(g, -3.6, 0, 3.6, 0, [[0, '#8a5a30'], [0.5, '#6b4423'], [1, '#3e2814']]), FP_LINE);
+    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 0.3; for (let i = 0; i < 6; i++) { g.beginPath(); g.moveTo(-2 + i * 0.8, 1 + i * 0.5); g.lineTo(-1.5 + i * 0.7, 26); g.stroke(); }
+    if (kind === 'pine') {
+      [[24, 15, 36], [38, 13, 58], [54, 10.5, 78], [68, 8, 92]].forEach(([y0, hw, y1], i) => {
+        fpP(g, [[-hw, y0], [hw, y0], [0, y1]], fpLg(g, -hw, 0, hw, 0, [[0, pal.light], [0.45, pal.mid], [1, pal.deep]]), FP_LINE);
+        g.strokeStyle = 'rgba(0,0,0,0.18)'; g.lineWidth = 0.3; for (let k = 0; k < 5; k++) { g.beginPath(); g.moveTo(-hw * (0.8 - k * 0.15), y0 + 0.5); g.lineTo(-hw * (0.1 + k * 0.02), y0 + (y1 - y0) * 0.6); g.stroke(); }
+        g.fillStyle = 'rgba(244,248,252,0.9)'; g.beginPath(); g.moveTo(-hw * 0.5, y0 + (y1 - y0) * 0.55); g.lineTo(0, y1); g.lineTo(hw * 0.5, y0 + (y1 - y0) * 0.55); g.quadraticCurveTo(0, y0 + (y1 - y0) * 0.42, -hw * 0.5, y0 + (y1 - y0) * 0.55); g.fill();
+      });
+      return;
+    }
+    const blobs = [[0, 58, 15], [-11, 50, 12], [11, 50, 12.5], [-6, 66, 11.5], [7, 67, 11], [0, 76, 9], [-15, 60, 8.5], [15, 61, 8.5], [-5, 44, 9.5], [6, 43, 9]];
+    blobs.forEach(([x, y, r], i) => {
+      fpE(g, x, y, r, r * 0.92, fpRg(g, x - r * 0.35, y + r * 0.4, r * 0.1, r * 1.15, [[0, pal.light], [0.55, pal.mid], [1, pal.deep]]), 0, 'rgba(0,0,0,0.25)');
+    });
+    for (let i = 0; i < 90; i++) {
+      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * 18, x = Math.cos(a) * d * 0.95, y = 60 + Math.sin(a) * d * 0.95;
+      fpE(g, x, y, 0.7 + rnd() * 1.1, 0.5 + rnd() * 0.7, rnd() < 0.6 ? pal.speckLight : pal.speckDark, rnd() * 3, null);
+    }
+  }, 5);
+}
+function fpTree(p, t) {
+  const kind = t.kind === 'pine' ? 'pine' : 'tree', hash = Math.abs(Math.round(t.x * 7 + t.y * 13 + t.x * t.y * 0.01)), sc = 0.92 + (hash % 5) * 0.045;
+  fpSoftShadow(p, 16 * sc);
+  fpBlit({ sx: p.sx, by: p.by, s: p.s * sc, sv: p.sv * sc }, fpTreeSprite(kind, hash % 3), false);
+}
+
+/* Darth Vader */
+function fpVaderSprite(view) {
+  return fpSprite('X' + view, 44, 68, g => {
+    const blk = '#0d0d11', dk = '#17171d', mid = '#2a2a33';
+    if (view === 'side') {
+      fpP(g, [[-3, 49], [-9, 44], [-17, 22], [-19, 3], [-6, 2], [-2, 14]], fpLg(g, -19, 0, 0, 0, [[0, '#050507'], [1, '#17171e']]), FP_LINE);
+      [[-1.4, true], [1.6, false]].forEach(([dx, far]) => { fpLimb(g, dx, 27, dx + (far ? -1.5 : 1.5), 11, 5.4, far ? '#0a0a0d' : blk); fpRR(g, dx - 3.2 + (far ? -1.5 : 1.5), 0.2, 8, 12, 2, far ? '#0a0a0d' : '#14141a', FP_LINE); });
+      fpP(g, [[-4.8, 48], [4.8, 48], [4.2, 28], [-4.2, 28]], fpLg(g, -5, 0, 5, 0, [[0, '#2a2a33'], [1, '#0b0b0f']]), FP_LINE);
+      g.fillStyle = '#16161c'; g.fillRect(-4.6, 26.6, 9.2, 3); fpRR(g, 1, 27, 3, 2, 0.4, mid, FP_LINE);
+      fpE(g, 0, 47, 3.4, 3, '#1b1b22', 0, FP_LINE);
+      fpLimb(g, 1, 45, 6, 31, 4.6, '#0e0e12'); fpE(g, 6.2, 29.6, 2.4, 2.6, '#08080b', 0, FP_LINE);
+      fpP(g, [[-4, 52], [-7.6, 58], [-5.8, 63], [0, 64.4], [5.2, 63], [7.2, 57], [5.4, 51.2]], fpRg(g, -2, 61, 0.5, 11, [[0, '#4a4a56'], [0.45, '#17171d'], [1, '#08080b']]), FP_LINE);
+      fpP(g, [[3.8, 58], [7.4, 57.4], [7, 51], [5.4, 49], [3.2, 49.4]], '#121218', FP_LINE);
+      fpE(g, 5.2, 55.6, 1.7, 1, '#3a0e0e', -0.2); fpE(g, 4.8, 55.9, 0.5, 0.35, '#c83a3a');
+      fpP(g, [[7.4, 55.2], [8.7, 53.2], [7.2, 52.6]], '#050507'); fpRR(g, 4.4, 49.6, 3.4, 2.4, 0.4, '#5a5a66', FP_LINE);
+      fpL(g, 5.4, 49.8, 5.4, 51.8, 0.25, '#222'); fpL(g, 6.6, 49.8, 6.6, 51.8, 0.25, '#222');
+      return;
+    }
+    const back = view === 'back';
+    fpP(g, [[-9.5, 50], [9.5, 50], [17.5, 3], [-17.5, 3]], fpLg(g, -17, 0, 17, 0, [[0, '#050507'], [0.5, '#17171e'], [1, '#050507']]), FP_LINE);
+    g.strokeStyle = 'rgba(255,255,255,0.07)'; g.lineWidth = 0.5; for (let i = -3; i <= 3; i++) { g.beginPath(); g.moveTo(i * 2.3, 49); g.lineTo(i * 4.8, 4); g.stroke(); }
+    if (!back) {
+      [-1, 1].forEach(sd => { fpLimb(g, sd * 3.8, 28, sd * 3.9, 12, 5.8, blk); fpRR(g, sd * 3.9 - 3.4, 0.2, 6.8, 13, 2, '#14141a', FP_LINE); g.fillStyle = 'rgba(255,255,255,0.16)'; g.fillRect(sd * 3.9 - 2.4, 2, 0.8, 9); });
+      fpP(g, [[-8.4, 48.6], [8.4, 48.6], [7.2, 28], [-7.2, 28]], fpLg(g, -8, 0, 8, 0, [[0, '#2a2a33'], [0.5, '#16161c'], [1, '#0a0a0e']]), FP_LINE);
+      g.fillStyle = '#16161c'; g.fillRect(-7.4, 26.4, 14.8, 3.4); fpRR(g, -3.6, 26.7, 7.2, 2.8, 0.5, mid, FP_LINE);
+      [['#e23e3e', -2.4], ['#4fd1ff', -0.5], ['#e8d26a', 1.4]].forEach(([c, x]) => { g.fillStyle = c; g.fillRect(x, 27.4, 1.1, 1.1); });
+      fpRR(g, -4.8, 32.6, 9.6, 12, 1, '#08080b', FP_LINE);
+      [['#e23e3e', -3.4], ['#4fd1ff', -0.8], ['#e8d26a', 1.8]].forEach(([c, x]) => { g.fillStyle = c; g.fillRect(x, 40.4, 1.6, 1.3); });
+      g.fillStyle = '#4a4a55'; g.fillRect(-3.6, 36, 7.2, 0.5); g.fillRect(-3.6, 34.4, 7.2, 0.5);
+      [-1, 1].forEach(sd => { fpE(g, sd * 10, 47.4, 3.6, 3, '#1d1d25', 0, FP_LINE); fpLimb(g, sd * 10.6, 45, sd * 11.8, 29, 4.8, '#0e0e12'); fpE(g, sd * 11.9, 27.6, 2.5, 2.7, '#08080b', 0, FP_LINE); });
+    } else {
+      [-1, 1].forEach(sd => { fpRR(g, sd * 3.9 - 3.4, 0.2, 6.8, 10, 2, '#14141a', FP_LINE); });
+      fpE(g, 0, 47.5, 10.4, 3.2, '#17171e', 0, FP_LINE);
+      [-1, 1].forEach(sd => { fpE(g, sd * 10, 47.4, 3.6, 3, '#1d1d25', 0, FP_LINE); fpLimb(g, sd * 10.6, 45, sd * 11.8, 29, 4.8, '#0e0e12'); fpE(g, sd * 11.9, 27.6, 2.5, 2.7, '#08080b', 0, FP_LINE); });
+    }
+    fpRR(g, -2.6, 48, 5.2, 3.4, 1, '#0b0b0e');
+    fpP(g, [[-6.6, 52], [-7.8, 58], [-5.2, 63.4], [0, 65], [5.2, 63.4], [7.8, 58], [6.6, 52]], fpRg(g, -2.4, 61, 0.5, 12, [[0, '#4a4a56'], [0.4, '#17171d'], [1, '#08080b']]), FP_LINE);
+    if (back) { fpL(g, 0, 52, 0, 64.4, 0.5, '#2c2c36'); fpE(g, 0, 53.4, 6, 1.1, '#111116'); return; }
+    fpP(g, [[-5.8, 58], [5.8, 58], [5.2, 50.6], [3.2, 48.6], [-3.2, 48.6], [-5.2, 50.6]], '#101016', FP_LINE);
+    [-1, 1].forEach(sd => { fpE(g, sd * 2.9, 55.4, 2.1, 1.25, '#3a0e0e', sd * -0.3, FP_LINE); fpE(g, sd * 2.9 - 0.4, 55.7, 0.6, 0.4, '#c83a3a'); });
+    fpP(g, [[0, 54.2], [-1, 52.4], [1, 52.4]], '#050507');
+    fpRR(g, -2.7, 49.2, 5.4, 2.8, 0.5, '#5a5a66', FP_LINE);
+    for (let i = -1; i <= 1; i++) fpL(g, i * 1.4, 49.4, i * 1.4, 51.8, 0.25, '#222');
+    [-1, 1].forEach(sd => { fpL(g, sd * 4.6, 54, sd * 4.1, 50.4, 0.3, '#2c2c36'); });
+  }, 6);
+}
+function fpVader(p, b, yaw) {
+  if (b.dead) ctx.globalAlpha *= Math.max(0, 1 - b.deadT / 1.4);
+  const heading = (b.state === 'windup' || b.state === 'strike') ? b.lockAim : b.aim, vw = fpView(heading, yaw, p.ang);
+  if (b.enraged && !b.dead) {
+    const cy = p.by - 36 * p.sv, g = ctx.createRadialGradient(p.sx, cy, 0, p.sx, cy, 48 * p.s);
+    g.addColorStop(0, 'rgba(255,40,40,0.35)'); g.addColorStop(1, 'rgba(255,40,40,0)');
+    ctx.fillStyle = g; ctx.fillRect(p.sx - 48 * p.s, cy - 48 * p.s, 96 * p.s, 96 * p.s);
+  }
+  fpSoftShadow(p, 17);
+  fpBlit(p, fpVaderSprite(vw.v), vw.flip);
+  if (b.state !== 'wait' && !b.dead) {                                                                  // the red saber, posed by what he's doing
+    const hx = 11.8, sgn = vw.flip ? -1 : 1;
+    let a = hx, c, d, e;
+    if (b.state === 'windup') { c = 31; d = hx; e = 100; }
+    else if (b.state === 'strike') { a = hx - 38; c = 66; d = hx + 18; e = 8; }
+    else if (b.state === 'recover') { c = 28; d = hx + 9; e = 6; }
+    else { c = 31; d = hx; e = 80; }
+    if (vw.v === 'side') { d = sgn * (6.2 + (d - hx) * 0.4); a = sgn * (6.2 + (a - hx) * 0.4); }       // seen side-on, the sweep is mostly toward or away from you
+    else if (vw.v === 'back') { a = -a; d = -d; }
+    fpLine(p, a, c, d, e, 7.5, 'rgba(255,50,50,0.35)'); fpLine(p, a, c, d, e, 4.2, '#ff4d4d'); fpLine(p, a, c, d, e, 1.6, '#ffe0e0');
+  }
+  fpHitFlash(p, b, 30, 16, 34);
+}
+
+function fpHazard(p, h, yaw) {
+  if (h.dead) { ctx.globalAlpha *= Math.max(0, 1 - h.deadT / DEFEAT_FADE); p.sv *= Math.max(0.15, 1 - h.deadT / 0.25); }
+  else h.alert = canDetect(h);
+  if (h.type === 'human') fpPerson(p, h, yaw);
+  else if (h.type === 'dog') fpDog(p, h, yaw);
+  else if (h.type === 'cow') fpCow(p, h, yaw);
+  else if (h.type === 'reindeer') fpReindeer(p, h, yaw);
+}
+function fpPickup(p, pk) {
+  const bob = Math.sin(animTime * 3 + pk.x) * 2, cy = p.by - (16 + bob) * p.sv;
+  const g = ctx.createRadialGradient(p.sx, cy, 0, p.sx, cy, 15 * p.s);
+  g.addColorStop(0, 'rgba(255,224,102,0.9)'); g.addColorStop(1, 'rgba(255,224,102,0)');
+  ctx.fillStyle = g; ctx.fillRect(p.sx - 15 * p.s, cy - 15 * p.s, 30 * p.s, 30 * p.s);
+  fpOval(p, 0, 16 + bob, 6.5, 6.5, '#ffd34d');
+  fpPoly(p, [[-1.5, 21 + bob], [3.5, 21 + bob], [0.5, 17 + bob], [3.5, 17 + bob], [-2.5, 10.5 + bob], [-0.5, 16 + bob], [-3.5, 16 + bob]], '#fff6c0');
+}
+
+function fpSprites(ex, ey, yaw, items) {
+  const add = (wx, wy, fn, minDepth) => {
+    const p = fpProject(ex, ey, yaw, wx, wy);
+    if (p && p.depth > (minDepth || 10)) items.push({ d: p.depth, p, fn });
+  };
+  decor.forEach(t => add(t.x, t.y, p => fpTree(p, t), 30));
+  pickups.forEach(pk => { if (!pk.collected) add(pk.x + pk.w / 2, pk.y + pk.h / 2, p => fpPickup(p, pk)); });
+  friends.forEach(f => add(f.x + f.w / 2, f.y + f.h / 2, p => fpBaby(p, f, f.face, f.moving, yaw, true)));
+  followers.forEach(f => {
+    const moving = Math.hypot(f.x - (f.fpx === undefined ? f.x : f.fpx), f.y - (f.fpy === undefined ? f.y : f.fpy)) > 0.2;
+    f.fpx = f.x; f.fpy = f.y;
+    add(f.x, f.y, p => fpBaby(p, f, f.face, moving, yaw));
+  });
+  hazards.forEach(h => { if (!(h.dead && h.deadT >= DEFEAT_FADE)) add(h.x + h.w / 2, h.y + h.h / 2, p => fpHazard(p, h, yaw)); });
+  vehicles.forEach(v => { if (!v.dead) add(v.x + v.w / 2, v.y + v.h / 2, p => fpCar(p, v, ex, ey, yaw)); });
+  if (boss && !(boss.dead && boss.deadT > 1.4)) add(boss.x + boss.w / 2, boss.y + boss.h / 2, p => fpVader(p, boss, yaw));
+}
+
+function drawFpFloaters(ex, ey, yaw) {
+  ctx.font = 'bold 16px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 3;
+  floaters.forEach(f => {
+    const p = fpProject(ex, ey, yaw, f.x, f.y);
+    if (!p || p.depth < 14) return;
+    const y = p.by - (26 + f.t * 40) * p.s;
+    const blue = f.tone === 'blue', green = f.tone === 'green';
+    ctx.globalAlpha = Math.max(0, 1 - f.t / 0.7);
+    ctx.strokeStyle = blue ? 'rgba(0,45,80,0.9)' : green ? 'rgba(0,70,25,0.9)' : 'rgba(80,0,0,0.85)';
+    ctx.strokeText(f.text, p.sx, y);
+    ctx.fillStyle = blue ? '#dff8ff' : green ? '#d4ffd8' : '#ffd6d6';
+    ctx.fillText(f.text, p.sx, y);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// What's in front of your face: the capybara's snout at the bottom of the view, and your lightsaber.
+function drawFpSnout() {
+  const bob = player.moving ? Math.sin(animTime * 11) * 3 : 0, cx = W / 2, cy = H + 14 + bob;
+  const g = ctx.createLinearGradient(0, cy - 50, 0, cy + 40);
+  g.addColorStop(0, '#b58450'); g.addColorStop(1, '#6f4a29');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, 96, 50, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#3a2820'; ctx.beginPath(); ctx.ellipse(cx, cy - 31, 34, 13, 0, 0, Math.PI * 2); ctx.fill();    // the nose pad
+  ctx.fillStyle = '#150e0a';
+  ctx.beginPath(); ctx.ellipse(cx - 12, cy - 33, 6, 3.2, -0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + 12, cy - 33, 6, 3.2, 0.2, 0, Math.PI * 2); ctx.fill();
+}
+function drawFpSaber() {
+  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, L = 400;
+  let bx = W * 0.83, by = H + 40 + bob, th = -0.3, glow = 1;
+  if (player.blocking) { bx = W * 0.56; by = H + 40; th = -0.05; glow = 1.3 + 0.3 * Math.sin(animTime * 30); }
+  else if (player.swingT >= 0) {                                                       // sweeps right to left across the view
+    const p = Math.min(1, player.swingT / SWING_TIME), e = 1 - (1 - p) * (1 - p);
+    th = 0.55 - 2.0 * e; bx = W * (0.83 - 0.3 * Math.sin(p * Math.PI)); glow = 1.4;
+  }
+  const tx = bx + Math.sin(th) * L, ty = by - Math.cos(th) * L, hx = bx + Math.sin(th) * 70, hy = by - Math.cos(th) * 70;
+  ctx.lineCap = 'round';
+  [['rgba(79,209,255,' + (0.22 * glow).toFixed(2) + ')', 30], ['rgba(110,225,255,0.55)', 15], ['#e9fbff', 6]].forEach(l => {
+    ctx.strokeStyle = l[0]; ctx.lineWidth = l[1]; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
+  });
+  ctx.strokeStyle = '#2f2f38'; ctx.lineWidth = 17; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(hx, hy); ctx.stroke();    // the hilt
+  ctx.strokeStyle = '#b4b4c0'; ctx.lineWidth = 19; ctx.beginPath(); ctx.moveTo(hx - Math.sin(th) * 10, hy + Math.cos(th) * 10); ctx.lineTo(hx, hy); ctx.stroke();
+}
+
+function drawFpOverlays() {
+  if (inBush(player)) { ctx.fillStyle = 'rgba(25,85,35,0.38)'; ctx.fillRect(0, 0, W, H); }
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.34, W / 2, H / 2, H * 0.78);     // a soft dark frame
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (player.suspicion > 0.15) {                                                           // the edges flush red as someone notices you
+    const a = Math.min(0.5, player.suspicion * 0.5) * (0.7 + 0.3 * Math.sin(animTime * 9));
+    const r = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
+    r.addColorStop(0, 'rgba(220,30,30,0)'); r.addColorStop(1, 'rgba(220,30,30,' + a.toFixed(2) + ')');
+    ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+  }
+  if (player.hitFlash > 0) { ctx.fillStyle = 'rgba(230,30,30,' + (0.5 * player.hitFlash / 0.2).toFixed(2) + ')'; ctx.fillRect(0, 0, W, H); }
+  if (boss && !boss.dead && boss.state === 'windup') {                                     // Vader's raised saber: is it about to land on you?
+    const bc = center(boss), pc = center(player), dx = pc.x - bc.x, dy = pc.y - bc.y;
+    if (Math.hypot(dx, dy) <= VADER_REACH && Math.abs(normAngle(Math.atan2(dy, dx) - boss.lockAim)) <= VADER_ARC) {
+      const a = 0.25 + 0.2 * Math.sin(animTime * 20);
+      ctx.fillStyle = 'rgba(255,40,40,' + a.toFixed(2) + ')'; ctx.fillRect(0, 0, W, H);
+      ctx.font = 'bold 26px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(80,0,0,0.9)';
+      ctx.strokeText('BLOCK (B) OR STEP BACK!', W / 2, H * 0.3); ctx.fillStyle = '#fff'; ctx.fillText('BLOCK (B) OR STEP BACK!', W / 2, H * 0.3);
+    }
+  }
+  const bl = (animTime % 4.3) / 0.16;                                                      // now and then, a blink
+  if (bl < 1) { const lid = Math.sin(bl * Math.PI) * H * 0.3; ctx.fillStyle = '#120c08'; ctx.fillRect(0, 0, W, lid); ctx.fillRect(0, H - lid, W, lid); }
+}
+
+function drawFirstPerson() {
+  const th = FP_THEMES[currentLevel.theme] || FP_THEMES.zoo, fog = th.fog;
+  const yaw = player.facing + (player.spinT >= 0 ? player.spinT / SPIN_TIME * Math.PI * 2 : 0);   // a spin whirls the whole view round
+  const pc = center(player), ex = pc.x + Math.cos(yaw) * 6, ey = pc.y + Math.sin(yaw) * 6;
+  const sky = ctx.createLinearGradient(0, 0, 0, FP_HORIZON);
+  sky.addColorStop(0, th.sky[0]); sky.addColorStop(1, th.sky[1]);
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, FP_HORIZON + 1);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  fpDrawFloor(ex, ey, yaw, fog);
+  const items = [];
+  fpCastWalls(ex, ey, yaw, fpRects(), items);
+  fpSprites(ex, ey, yaw, items);
+  items.sort((a, b) => b.d - a.d);
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.fn) { ctx.save(); ctx.globalAlpha = 1 - Math.min(1, it.d / FP_FAR) * 0.55; it.fn(it.p); ctx.restore(); }
+    else fpDrawSlice(it, fog);
+  }
+  drawFpFloaters(ex, ey, yaw);
+  drawFpSnout();
+  drawFpSaber();
+  drawFpOverlays();
+}
+
+/* ---------- Minimap ---------- */
+// A small radar-style map in the bottom-left corner, shown in the closer views (the overhead view already is the
+// map). It shows the walls, hedges, the exit, everyone who's hunting you and the way you're facing. Press M to hide it.
+let showMinimap = true;
+try { showMinimap = localStorage.getItem('capybara_minimap') !== '0'; } catch (err) {}
+const MM_W = 168, MM_H = Math.round(168 * H / W), MM_X = 12, MM_Y = H - MM_H - 12, MM_SX = MM_W / W, MM_SY = MM_H / H;
+
+function drawMinimap() {
+  if (!showMinimap || VIEW_MODES[viewMode].follow === false) return;
+  const mx = x => MM_X + x * MM_SX, my = y => MM_Y + y * MM_SY;
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = 'rgba(8,12,16,0.78)'; ctx.fillRect(MM_X - 3, MM_Y - 3, MM_W + 6, MM_H + 6);
+  ctx.beginPath(); ctx.rect(MM_X, MM_Y, MM_W, MM_H); ctx.clip();
+  ctx.globalAlpha = 0.55; ctx.drawImage(groundCanvas(), MM_X, MM_Y, MM_W, MM_H);          // the level's own ground, dimmed
+  ctx.globalAlpha = 1;
+  obstacles.forEach(o => {
+    ctx.fillStyle = o.type === 'water' ? '#3f8fd0' : o.type === 'fence' ? '#a87b45' : 'rgba(40,40,46,0.95)';
+    ctx.fillRect(mx(o.x), my(o.y), Math.max(1.5, o.w * MM_SX), Math.max(1.5, o.h * MM_SY));
+  });
+  bushes.forEach(b => { ctx.fillStyle = 'rgba(60,160,70,0.85)'; ctx.fillRect(mx(b.x), my(b.y), Math.max(2, b.w * MM_SX), Math.max(2, b.h * MM_SY)); });
+  const ex = currentLevel.exitGate || EXIT;                                              // the way out: a pulsing gold bar
+  ctx.fillStyle = 'rgba(255,214,70,' + (0.65 + 0.35 * Math.sin(animTime * 4)).toFixed(2) + ')';
+  ctx.fillRect(mx(ex.x), MM_Y, Math.max(4, ex.w * MM_SX), 3);
+
+  const dot = (x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(mx(x), my(y), r, 0, Math.PI * 2); ctx.fill(); };
+  pickups.forEach(pk => { if (!pk.collected) dot(pk.x + pk.w / 2, pk.y + pk.h / 2, 2.4, '#ffd34d'); });
+  friends.forEach(f => dot(f.x + f.w / 2, f.y + f.h / 2, 2.4, '#ff7aa8'));
+  vehicles.forEach(v => { if (!v.dead) { ctx.fillStyle = '#e8873a'; ctx.fillRect(mx(v.x), my(v.y + v.h / 2) - 1.2, Math.max(3, v.w * MM_SX), 2.4); } });
+  hazards.forEach(h => {
+    if (h.dead) return;
+    const c = center(h), x = mx(c.x), y = my(c.y), seeing = canDetect(h);
+    if (h.mode !== 'radius' && h.visionRange) {                                            // the cone each one can see you in
+      ctx.fillStyle = seeing ? 'rgba(255,60,60,0.45)' : 'rgba(255,200,80,0.2)';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, h.visionRange * MM_SX, h.angle - h.visionHalfAngle, h.angle + h.visionHalfAngle); ctx.closePath(); ctx.fill();
+    }
+    dot(c.x, c.y, 2.6, seeing ? '#ff3b3b' : '#e0584a');
+  });
+  if (boss && !boss.dead) { const c = center(boss); dot(c.x, c.y, 4, '#7a1d1d'); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(mx(c.x), my(c.y), 4.2, 0, Math.PI * 2); ctx.stroke(); }
+
+  const pc = center(player), px = mx(pc.x), py = my(pc.y), fp = VIEW_MODES[viewMode].fp;
+  const yaw = player.facing + (fp && player.spinT >= 0 ? player.spinT / SPIN_TIME * Math.PI * 2 : 0);
+  if (fp) {                                                                                // what you can see, as a wedge
+    const g = ctx.createRadialGradient(px, py, 0, px, py, 46); g.addColorStop(0, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, 46, yaw - FP_FOV / 2, yaw + FP_FOV / 2); ctx.closePath(); ctx.fill();
+  }
+  ctx.save(); ctx.translate(px, py); ctx.rotate(yaw);                                      // you: an arrow pointing the way you face
+  ctx.fillStyle = inBush(player) ? '#7be37b' : '#ffffff'; ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-2, 0); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1; ctx.strokeRect(MM_X - 0.5, MM_Y - 0.5, MM_W + 1, MM_H + 1);
+}
+
 function drawViewBanner() {
   if (viewBannerT <= 0) return;
   const a = Math.min(1, viewBannerT / 0.3, (1.6 - viewBannerT) / 0.2);
@@ -4386,6 +5311,16 @@ function drawViewBanner() {
 
 function draw(seenNow) {
   ctx.clearRect(0, 0, W, H);
+  if (VIEW_MODES[viewMode].fp) drawFirstPerson();
+  else drawScene();
+  drawMinimap();
+  drawViewBanner();
+  drawBossBar();
+  updateHpDisplay();
+  updateHud(seenNow);
+}
+
+function drawScene() {
   const cam = cameraTransform();
   ctx.save();
   ctx.translate(cam.ox, cam.oy);
@@ -4409,16 +5344,9 @@ function draw(seenNow) {
   drawCapybara(player);
   drawFloaters();
   ctx.restore();
+}
 
-  if (VIEW_MODES[viewMode].vignette) {                                             // a soft dark frame, for a more intimate, closed-in view
-    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.62);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  }
-  drawViewBanner();
-  drawBossBar();
-  updateHpDisplay();
-
+function updateHud(seenNow) {
   const guardFill = document.getElementById('guardFill');
   guardFill.style.width = (player.guard / GUARD_MAX * 100).toFixed(0) + '%';
   guardFill.style.background = player.guardBroken > 0 ? '#8a94a0' : (player.guard < GUARD_MAX * 0.25 ? '#ff8a33' : '#4fd1ff');
