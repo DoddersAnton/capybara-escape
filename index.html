@@ -678,7 +678,7 @@ const level3 = {
 
 const level4 = {
   name: 'Level 4 — The Mountain',
-  tip: 'The last of the wild. The reindeer are faster, sharper-eyed and quicker to raise the alarm, and more of them roam the slopes. Duck behind snowdrifts and zig-zag up, or fight back: reindeer have 4 health and your lightsaber does 2 damage a hit.',
+  tip: 'The last of the wild. The reindeer are faster and see a wider arc, though they take their time making up their minds, and more of them roam the slopes. Duck behind snowdrifts and zig-zag up, or fight back: reindeer have 4 health and your lightsaber does 2 damage a hit.',
   theme: 'mountain',
   difficulty: { speed: 1.35, vision: 1.25, fill: 0.7, decay: 1.1 },
   exitLabel: 'SUMMIT!',
@@ -702,13 +702,13 @@ const level4 = {
   ],
   hazardDefs: [
     // wide-set eyes: reindeer see in a broader cone (42°) than people do
-    { type:'reindeer', mode:'cone', pts:[{x:630,y:472},{x:930,y:472}], speed:95, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:30,y:312},{x:330,y:312}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:630,y:162},{x:930,y:162}], speed:100, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:900,y:80},{x:400,y:80}], speed:85, visionRange:160, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:630,y:472},{x:930,y:472}], speed:95, visionRange:150, visionHalfAngle:42*DEG, fillTime:1.6, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:30,y:312},{x:330,y:312}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:1.6, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:630,y:162},{x:930,y:162}], speed:100, visionRange:150, visionHalfAngle:42*DEG, fillTime:1.6, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:900,y:80},{x:400,y:80}], speed:85, visionRange:160, visionHalfAngle:42*DEG, fillTime:1.6, w:30, h:20 },
     // two more patrol the open slopes between the passes (each has a snowdrift to hide in)
-    { type:'reindeer', mode:'cone', pts:[{x:360,y:392},{x:600,y:392}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
-    { type:'reindeer', mode:'cone', pts:[{x:600,y:237},{x:360,y:237}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:0.8, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:360,y:392},{x:600,y:392}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:1.6, w:30, h:20 },
+    { type:'reindeer', mode:'cone', pts:[{x:600,y:237},{x:360,y:237}], speed:90, visionRange:150, visionHalfAngle:42*DEG, fillTime:1.6, w:30, h:20 },
   ],
   vehicleDefs: [],
   pickups: [{x:460, y:190, w:26, h:26, kind:'speed'}],
