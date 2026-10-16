@@ -738,7 +738,7 @@ const level4 = {
 // A duel instead of a stealth level: the exit stays sealed behind an energy barrier until Darth Vader is defeated.
 const level5 = {
   name: "Level 5 — Vader's Lair",
-  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will surround him when you command them to attack (F), each nipping in for 0.1 damage whenever it gets the chance (R calls them back) — though his swing shoves back any of them caught in it. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
+  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will surround him when you command them to attack (F), each nipping in for 1 damage whenever it gets the chance (R calls them back) — though his swing shoves back any of them caught in it. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
   theme: 'vader',
   difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
   exitLabel: 'ESCAPE POD',
@@ -1475,7 +1475,7 @@ const FRIEND_NOTICE_EXIT = 150;         // ...and settles back down once you're 
 const FRIEND_ROAM_SPEED = 46;           // ambling around when unbothered
 const FRIEND_FLEE_SPEED = 108;          // running speed once startled — still well below your own
 const FRIEND_ATTACK_RANGE = 42;         // how close a following baby must be to Vader to get a nip in
-const FRIEND_ATTACK_DAMAGE = 0.1;       // damage each nip deals
+const FRIEND_ATTACK_DAMAGE = 1;         // damage each nip deals
 const FRIEND_ATTACK_COOLDOWN = 1.3;     // seconds between nips from the same baby
 const FRIEND_ENGAGE_RANGE = 220;        // how close you need to get to Vader before the babies break formation
 const FRIEND_SWARM_RADIUS = 34;         // how far out they ring around him once they do
