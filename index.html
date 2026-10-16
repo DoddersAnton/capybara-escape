@@ -234,9 +234,9 @@
     <h1>🐹 Ezra's Capybara Escape Game</h1>
     <div class="credit-line">Please play to start</div>
     <div class="rotate-hint">📱 Tip: turn your phone sideways for a bigger game</div>
-    <p>Guide the capybara through five levels: sneak out of the <b>zoo</b>,
+    <p>Guide the capybara through six levels: sneak out of the <b>zoo</b>,
     dash across a busy <b>road</b>, cross a quiet <b>field</b>, climb a
-    snowy <b>mountain</b>, then duel <b>Darth Vader</b> for the escape pod.
+    snowy <b>mountain</b>, duel <b>Darth Vader</b> for the escape pod, then dodge asteroids and alien patrols in <b>deep space</b>.
     Move with <b>WASD</b> or <b>Arrow Keys</b> — on a phone or tablet, use the
     on-screen controls at the bottom (you can hide them).
     Duck into bushes, tall grass or snowdrifts to hide — they
@@ -270,7 +270,7 @@
 
   <div id="leaderboardScreen" class="overlay hidden">
     <h1>🏆 Leaderboard</h1>
-    <p>Fastest escapes through all five levels.</p>
+    <p>Fastest escapes through all six levels.</p>
     <div id="leaderboardBoard"></div>
     <div id="leaderboardNote" class="lb-note"></div>
     <button id="leaderboardBackBtn">Back</button>
@@ -299,9 +299,10 @@
 
   <div id="winScreen" class="overlay hidden">
     <h1>🎉 Freedom!</h1>
-    <p>You defeated Darth Vader and blasted off in the escape pod, far from the
-    zoo, the road, the field, the mountain, and every last person, reindeer
-    and Sith Lord chasing you.
+    <p>You defeated Darth Vader, blasted off in the escape pod and slipped through the
+    asteroid field and the alien patrols into the warp gate — far from the
+    zoo, the road, the field, the mountain, and every last person, reindeer,
+    Sith Lord and alien chasing you.
     Total time: <span id="winTime">0</span> seconds.</p>
     <p id="winFriends"></p>
     <div id="scoreEntry">
@@ -429,11 +430,17 @@ function sfxReindeerSnort() {                  // a sharp, snorting huff with a 
   tone(105, 0.22, {type:'sawtooth', vol:0.11, sweepTo:75});
   noiseBurst(0.12, 0.1, 0.18);
 }
+function sfxAlienChirp() {                     // a warbling, rising chirp
+  tone(500, 0.09, {type:'sine', vol:0.14, sweepTo:1300});
+  tone(900, 0.09, {type:'triangle', vol:0.12, delay:0.08, sweepTo:520});
+  tone(620, 0.12, {type:'sine', vol:0.12, delay:0.17, sweepTo:1500});
+}
 // What each animal does when it first spots you, and how long before it does it again.
 const SPOT_SOUNDS = {
   dog: { play: () => sfxDogBark(), cooldown: 1.5 },
   cow: { play: () => sfxMoo(), cooldown: 4 },
   reindeer: { play: () => sfxReindeerSnort(), cooldown: 3 },
+  alien: { play: () => sfxAlienChirp(), cooldown: 2.5 },
 };
 function sfxSpeedPickup() {
   tone(700, 0.08, {type:'square', vol:0.16, sweepTo:1100});
@@ -761,7 +768,68 @@ const level5 = {
   boss: { name:'DARTH VADER', x:449, y:200, w:30, h:46, hp:500, wake:1.4 },
 };
 
-const levels = [level1, level2, level3, level4, level5];
+/* ---------- Level 6: Deep Space ---------- */
+
+// Your escape pod has drifted into an asteroid field patrolled by aliens. The asteroids are moving "cars": they drift
+// across the screen in lanes, hurt if they hit you, and can be smashed with the lightsaber (or blocked with B).
+// The aliens patrol the safe strips between the lanes with a cone of vision, like the people did. Purple nebula
+// clouds hide you from them.
+const ROCK_COLORS = ['#7a6f63', '#6b6a72', '#85766a', '#5f5a56'];
+function makeAsteroids(lanes) {
+  const rocks = [];
+  let n = 0;
+  lanes.forEach(l => {
+    const count = l.count || 3, span = W + 160, gap = span / count;
+    for (let i = 0; i < count; i++) {
+      const size = l.sizes[(i + n) % l.sizes.length], x = ((l.offset + i * gap) % span) - 80;
+      rocks.push({ x, y: l.y - size / 2, w: size, h: size, dir: l.dir, speed: l.speed, startX: x, laneY: l.y - size / 2,
+                   kind: 'asteroid', color: ROCK_COLORS[(n * 3 + i) % ROCK_COLORS.length], spin: l.dir * (0.5 + (n % 3) * 0.35), seed: n * 7 + i });
+      n++;
+    }
+  });
+  return rocks;
+}
+
+const level6 = {
+  name: 'Level 6 — Deep Space',
+  tip: "Your escape pod has drifted into an asteroid field, and aliens patrol the wreckage between the lanes. Dodge the tumbling asteroids — or smash them with your lightsaber (10 health, 2 damage a hit) or block one head-on with B — and duck into the purple nebula clouds to break the aliens' line of sight. Aliens have 5 health and your lightsaber does 1 damage a hit. Reach the warp gate!",
+  theme: 'space',
+  difficulty: { speed: 1.15, vision: 1.1, fill: 0.85, decay: 0.8 },
+  exitLabel: 'WARP GATE',
+  playerStart: {x:468, y:575},
+  obstacles: [
+    ...borderWalls(GATE_X, GATE_W, 'forcefield'),
+    {x:330, y:412, w:54, h:42, type:'rock'}, {x:640, y:416, w:58, h:44, type:'rock'},      // asteroid chunks that don't move
+    {x:160, y:192, w:60, h:46, type:'rock'}, {x:726, y:196, w:64, h:48, type:'rock'},
+    {x:420, y:96, w:96, h:22, type:'hull'}, {x:240, y:540, w:100, h:22, type:'hull'},     // drifting wreckage
+  ],
+  bushes: [
+    {x:100, y:420, w:76, h:46, style:'nebula'}, {x:800, y:424, w:76, h:46, style:'nebula'},
+    {x:420, y:206, w:84, h:42, style:'nebula'},
+    {x:210, y:50, w:84, h:42, style:'nebula'}, {x:850, y:60, w:70, h:42, style:'nebula'},
+    {x:64, y:572, w:72, h:40, style:'nebula'}, {x:830, y:566, w:72, h:40, style:'nebula'},
+  ],
+  decor: [],
+  hazardDefs: [
+    { type:'alien', look:'green', mode:'cone', pts:[{x:60,y:436},{x:420,y:436}], speed:80, visionRange:150, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
+    { type:'alien', look:'grey',  mode:'cone', pts:[{x:520,y:440},{x:900,y:440}], speed:85, visionRange:150, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
+    { type:'alien', look:'green', mode:'cone', pts:[{x:60,y:212},{x:520,y:212}], speed:90, visionRange:155, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
+    { type:'alien', look:'grey',  mode:'cone', pts:[{x:620,y:222},{x:900,y:222}], speed:85, visionRange:150, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
+    { type:'alien', look:'green', mode:'cone', pts:[{x:60,y:96},{x:520,y:96}], speed:95, visionRange:160, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
+    { type:'alien', look:'grey',  mode:'cone', pts:[{x:640,y:96},{x:920,y:96}], speed:95, visionRange:160, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
+  ],
+  vehicleDefs: makeAsteroids([
+    {y:158, dir:-1, speed:125, offset:60,  sizes:[44, 36, 50]},
+    {y:276, dir:1,  speed:150, offset:300, sizes:[38, 46, 34]},
+    {y:362, dir:-1, speed:105, offset:150, sizes:[50, 40, 44]},
+    {y:502, dir:1,  speed:135, offset:20,  sizes:[42, 52, 36]},
+  ]),
+  pickups: [{x:470, y:430, w:26, h:26, kind:'speed'}],
+  friends: [{x:60,y:530},{x:300,y:212},{x:880,y:104}],
+  exitGate: EXIT,
+};
+
+const levels = [level1, level2, level3, level4, level5, level6];
 
 /* ---------- Runtime state ---------- */
 
@@ -884,7 +952,7 @@ function updateWaterfallSound(dt) {
 // seconds it takes suspicion to drain from full to empty (higher = they stay suspicious longer).
 // What the lightsaber can defeat: their health, and how much damage each hit does to them.
 // Dogs and cows can't be hurt.
-const SABER_TARGETS = { human: { hp: 6, damage: 1 }, reindeer: { hp: 4, damage: 2 } };
+const SABER_TARGETS = { human: { hp: 6, damage: 1 }, reindeer: { hp: 4, damage: 2 }, alien: { hp: 5, damage: 1 } };
 const SABER_REACH = 54;                 // px from the capybara's centre to the person's centre
 const SABER_ARC = 75 * DEG;             // each side of the direction the capybara is facing
 const SABER_COOLDOWN = 0.3;             // seconds between swings (hold Space to keep swinging)
@@ -1404,7 +1472,8 @@ function spawnSparks(x, y) {
 function breakCar(v) {
   const cx = v.x + v.w / 2, cy = v.y + v.h / 2;
   debris.push({ kind: 'flash', x: cx, y: cy, vx: 0, vy: 0, t: 0, life: 0.3, size: 26 });
-  const colors = [v.color || '#c94a3a', shadeColor(v.color || '#c94a3a', -0.3), '#222222', '#9ed6f0', '#555555'];
+  const colors = v.kind === 'asteroid' ? [v.color, shadeColor(v.color, -0.3), '#3a3530', '#8a8076', '#2a2622']
+                                       : [v.color || '#c94a3a', shadeColor(v.color || '#c94a3a', -0.3), '#222222', '#9ed6f0', '#555555'];
   for (let i = 0; i < 18; i++) {
     const a = Math.random() * Math.PI * 2, s = 70 + Math.random() * 170;
     debris.push({ kind: 'shard', x: v.x + Math.random() * v.w, y: v.y + Math.random() * v.h,
@@ -2011,13 +2080,13 @@ function updateVehicles(dt) {
     if (v.dir > 0 && v.x > W) v.x = -v.w;
     if (v.dir < 0 && v.x < -v.w) v.x = W;
   });
-  let runOver = false;
+  let runOver = null;
   vehicles.forEach(v => {
     if (v.dead || !rectsOverlap(player, v)) return;
     if (canBlockCar(v)) deflectCar(v);
-    else runOver = true;
+    else runOver = v;
   });
-  if (runOver) triggerCaught('A car nearly ran you over!');
+  if (runOver) triggerCaught(runOver.kind === 'asteroid' ? 'An asteroid smashed into you!' : 'A car nearly ran you over!');
 }
 
 function canDetect(h) {
@@ -2041,6 +2110,7 @@ const CATCH_MESSAGES = {
   dog: 'A dog sniffed you out and started barking!',
   cow: 'A startled cow gave away your position!',
   reindeer: 'A reindeer spotted you and stamped the alarm!',
+  alien: 'An alien spotted you and beamed you aboard its ship!',
 };
 
 function updateSuspicion(dt) {
@@ -2856,7 +2926,9 @@ function drawObstacle(o) {
     ctx.restore();
     return;
   }
-  if (o.type === 'rock') { drawBoulder(o); return; }
+  if (o.type === 'forcefield') { drawForcefield(o); return; }
+  if (o.type === 'hull') { drawHull(o); return; }
+  if (o.type === 'rock') { if (currentLevel.theme === 'space') drawAsteroidRock(o); else drawBoulder(o); return; }
   if (o.type === 'hay') { drawHayBale(o); return; }
   if (o.type === 'wall' && currentLevel.theme === 'mountain') { drawRockWall(o); return; }
   if (o.type === 'wall') {
@@ -3102,7 +3174,7 @@ function paintSnowdrift(g, b, variant) {
 
 function drawBush(b) {
   const hash = Math.abs(Math.round(b.x * 7 + b.y * 13)), variant = hash % 3;
-  const paint = b.style === 'grass' ? paintTallGrass : b.style === 'snow' ? paintSnowdrift : paintLeafyBush;
+  const paint = b.style === 'grass' ? paintTallGrass : b.style === 'snow' ? paintSnowdrift : b.style === 'nebula' ? paintNebula : paintLeafyBush;
   const spr = cachedSprite('hide' + b.style + b.w + 'x' + b.h + 'v' + variant + '_' + hash, b.w + BUSH_PAD * 2, b.h + BUSH_PAD * 2, g => paint(g, b, variant));
   ctx.save();
   if (b.style === 'grass') {                                                        // tall grass sways in the breeze
@@ -3111,6 +3183,7 @@ function drawBush(b) {
     ctx.transform(1, 0, 0.07 * Math.sin(animTime * 1.6 + b.x * 0.05), 1, 0, 0);
     ctx.translate(-baseX, -baseY);
   }
+  if (b.style === 'nebula') ctx.globalAlpha = 0.82 + 0.14 * Math.sin(animTime * 1.4 + b.x * 0.03);        // nebulae breathe
   ctx.drawImage(spr, b.x - BUSH_PAD, b.y - BUSH_PAD, b.w + BUSH_PAD * 2, b.h + BUSH_PAD * 2);
   ctx.restore();
 }
@@ -3537,6 +3610,7 @@ function drawHazardBody(h) {
   if (h.type === 'dog') { drawDog(h); return; }
   if (h.type === 'cow') { drawCow(h); return; }
   if (h.type === 'reindeer') { drawReindeer(h); return; }
+  if (h.type === 'alien') { drawAlien(h); return; }
 }
 
 function drawHpPips(h) {
@@ -3599,6 +3673,7 @@ function shadeColor(hex, amt) {
 // Seen from above, drawn facing right and mirrored for cars driving left.
 function drawVehicle(v) {
   if (v.dead) return;                  // smashed cars are gone; see breakCar for the wreckage
+  if (v.kind === 'asteroid') { drawAsteroid(v); return; }
   const col = v.color || '#c94a3a', kind = v.kind || 'sedan';
   const glass = '#25364a', glassShine = 'rgba(190,225,250,0.35)';
   ctx.save();
@@ -4148,7 +4223,164 @@ function paintGroundVader(g, rnd) {
   g.beginPath(); g.arc(W / 2, H / 2, 92, 0, Math.PI * 2); g.stroke();
 }
 
-const GROUND_PAINTERS = { zoo: paintGroundZoo, field: paintGroundField, road: paintGroundRoad, mountain: paintGroundMountain, vader: paintGroundVader };
+/* ---------- Deep Space: ground, gate, asteroids, aliens, nebulae, force fields ---------- */
+
+function paintGroundSpace(g, rnd) {
+  const bg = g.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#04051a'); bg.addColorStop(0.5, '#0b0a28'); bg.addColorStop(1, '#130a2c');
+  g.fillStyle = bg; g.fillRect(0, 0, W, H);
+  [[220, 210, 280, '120,60,200'], [770, 430, 320, '40,110,200'], [500, 580, 240, '200,60,140'], [830, 110, 200, '70,40,160']].forEach(([x, y, r, c]) => {
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(' + c + ',0.30)'); gr.addColorStop(1, 'rgba(' + c + ',0)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  });
+  const pl = g.createRadialGradient(70, 80, 4, 90, 100, 60);                                // a dim ringed planet in the corner
+  pl.addColorStop(0, '#6a86c8'); pl.addColorStop(0.7, '#2c3f7a'); pl.addColorStop(1, '#0c1233');
+  g.fillStyle = pl; g.beginPath(); g.arc(92, 100, 52, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(190,200,240,0.35)'; g.lineWidth = 3; g.beginPath(); g.ellipse(92, 100, 86, 17, -0.35, 0, Math.PI * 2); g.stroke();
+  for (let i = 0; i < 430; i++) {
+    const x = rnd() * W, y = rnd() * H, big = rnd() < 0.08, r = big ? 1.3 + rnd() * 1.1 : 0.35 + rnd() * 0.85, tint = rnd();
+    const c = tint < 0.6 ? '255,255,255' : tint < 0.82 ? '170,200,255' : '255,225,170';
+    g.fillStyle = 'rgba(' + c + ',' + (0.45 + rnd() * 0.5).toFixed(2) + ')';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    if (big) { g.strokeStyle = 'rgba(' + c + ',0.35)'; g.lineWidth = 0.6; g.beginPath(); g.moveTo(x - r * 4, y); g.lineTo(x + r * 4, y); g.moveTo(x, y - r * 4); g.lineTo(x, y + r * 4); g.stroke(); }
+  }
+}
+
+function paintSpaceGate(g) {                                                                // a warp gate: two pylons around a swirling portal
+  g.translate(GATE_PAD_X, GATE_PAD_TOP);
+  const w = GATE_W, cx = w / 2;
+  const glow = g.createRadialGradient(cx, 34, 4, cx, 34, 96);
+  glow.addColorStop(0, 'rgba(170,120,255,0.55)'); glow.addColorStop(0.5, 'rgba(70,160,255,0.22)'); glow.addColorStop(1, 'rgba(70,160,255,0)');
+  g.fillStyle = glow; g.fillRect(-18, -4, w + 36, 90);
+  [8, w - 24].forEach(px => {
+    const m = g.createLinearGradient(px, 0, px + 16, 0); m.addColorStop(0, '#6a7790'); m.addColorStop(0.5, '#3a4560'); m.addColorStop(1, '#222a40');
+    g.fillStyle = m; g.fillRect(px, 0, 16, 58); g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1; g.strokeRect(px, 0, 16, 58);
+    g.fillStyle = '#5ad8ff'; for (let y = 6; y < 54; y += 10) g.fillRect(px + 6, y, 4, 5);
+  });
+  g.fillStyle = '#2c354e'; g.fillRect(8, 0, w - 16, 9);
+  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.strokeRect(8, 0, w - 16, 9);
+  const portal = g.createRadialGradient(cx, 34, 2, cx, 34, 60);
+  portal.addColorStop(0, '#ffffff'); portal.addColorStop(0.25, '#b9a6ff'); portal.addColorStop(0.7, '#5a46d8'); portal.addColorStop(1, 'rgba(40,30,120,0.2)');
+  g.fillStyle = portal; g.beginPath(); g.ellipse(cx, 34, 62, 26, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = 'rgba(210,230,255,0.8)'; g.lineWidth = 1.6;
+  for (let k = 0; k < 4; k++) { g.beginPath(); g.ellipse(cx, 34, 56 - k * 12, 23 - k * 5, 0.25 * k, 0.4 * k, Math.PI * 1.5 + 0.4 * k); g.stroke(); }
+  g.strokeStyle = '#8fe6ff'; g.lineWidth = 2.2; g.beginPath(); g.ellipse(cx, 34, 63, 27, 0, 0, Math.PI * 2); g.stroke();
+}
+
+// A lumpy rock, lit from the upper left, with craters. Drawn in a (size + 16) square so it can be spun.
+function paintAsteroidShape(g, cx, cy, rx, ry, color, seed) {
+  const rnd = makeRng(seed * 977 + 13), pts = [], n = 16;
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, k = 0.8 + rnd() * 0.3; pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]); }
+  g.fillStyle = 'rgba(0,0,0,0.25)'; g.beginPath(); pts.forEach((p, i) => { if (i) g.lineTo(p[0] + 2, p[1] + 3); else g.moveTo(p[0] + 2, p[1] + 3); }); g.closePath(); g.fill();
+  const body = g.createRadialGradient(cx - rx * 0.4, cy - ry * 0.45, rx * 0.1, cx, cy, Math.max(rx, ry) * 1.15);
+  body.addColorStop(0, shadeColor(color, 0.35)); body.addColorStop(0.55, color); body.addColorStop(1, shadeColor(color, -0.55));
+  g.fillStyle = body; g.beginPath(); pts.forEach((p, i) => { if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); }); g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = 1; g.stroke();
+  for (let i = 0; i < 4; i++) {                                                             // craters: a dark bowl with a lit lower rim
+    const a = rnd() * Math.PI * 2, d = rnd() * 0.55, x = cx + Math.cos(a) * rx * d, y = cy + Math.sin(a) * ry * d, r = Math.max(2, rx * (0.12 + rnd() * 0.12));
+    g.fillStyle = 'rgba(0,0,0,0.32)'; g.beginPath(); g.ellipse(x, y, r, r * 0.8, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 0.8; g.beginPath(); g.ellipse(x, y, r, r * 0.8, 0, 0.2, Math.PI * 0.9); g.stroke();
+  }
+}
+function drawAsteroid(v) {                                                                  // a drifting, tumbling asteroid
+  const size = Math.round(v.w), pad = 8, tot = size + pad * 2;
+  const spr = cachedSprite('ast' + size + v.color + v.seed, tot, tot, g => paintAsteroidShape(g, tot / 2, tot / 2, size / 2, size / 2, v.color, v.seed));
+  ctx.save();
+  ctx.translate(v.x + v.w / 2, v.y + v.h / 2);
+  ctx.rotate(animTime * v.spin + v.seed);
+  ctx.drawImage(spr, -tot / 2, -tot / 2, tot, tot);
+  if (v.hitFlash > 0) { ctx.fillStyle = 'rgba(255,255,255,' + (0.6 * v.hitFlash / 0.15).toFixed(2) + ')'; ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+function drawAsteroidRock(o) {                                                              // a big asteroid chunk that doesn't move
+  const pad = 8, key = 'arock' + o.x + '_' + o.y;
+  const spr = cachedSprite(key, o.w + pad * 2, o.h + pad * 2, g => paintAsteroidShape(g, o.w / 2 + pad, o.h / 2 + pad, o.w / 2, o.h / 2, ROCK_COLORS[Math.abs(o.x) % ROCK_COLORS.length], Math.abs(Math.round(o.x + o.y)) % 97));
+  ctx.drawImage(spr, o.x - pad, o.y - pad, o.w + pad * 2, o.h + pad * 2);
+}
+function drawHull(o) {                                                                      // a floating slab of broken station plating
+  const m = ctx.createLinearGradient(0, o.y, 0, o.y + o.h);
+  m.addColorStop(0, '#7a869c'); m.addColorStop(0.5, '#4a5468'); m.addColorStop(1, '#2a3040');
+  ctx.fillStyle = m; ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5; ctx.strokeRect(o.x + 0.5, o.y + 0.5, o.w - 1, o.h - 1);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+  for (let x = o.x + 24; x < o.x + o.w - 6; x += 24) { ctx.beginPath(); ctx.moveTo(x, o.y); ctx.lineTo(x, o.y + o.h); ctx.stroke(); }
+  const blink = Math.sin(animTime * 4 + o.x) > 0;
+  ctx.fillStyle = blink ? '#5ad8ff' : '#1d4a5a'; ctx.fillRect(o.x + 6, o.y + o.h / 2 - 2, 4, 4);
+  ctx.fillStyle = blink ? '#1d4a5a' : '#ff8a5a'; ctx.fillRect(o.x + o.w - 10, o.y + o.h / 2 - 2, 4, 4);
+}
+function drawForcefield(o) {                                                                // the edge of the playing area: a shimmering energy barrier
+  const pulse = 0.5 + 0.5 * Math.sin(animTime * 3 + (o.x + o.y) * 0.02), horiz = o.w >= o.h;
+  const gr = horiz ? ctx.createLinearGradient(0, o.y, 0, o.y + o.h) : ctx.createLinearGradient(o.x, 0, o.x + o.w, 0);
+  gr.addColorStop(0, 'rgba(60,160,255,0.04)'); gr.addColorStop(0.5, 'rgba(90,200,255,' + (0.32 + 0.14 * pulse).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(60,160,255,0.04)');
+  ctx.fillStyle = gr; ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.save();
+  ctx.shadowColor = '#4fd1ff'; ctx.shadowBlur = 10; ctx.strokeStyle = 'rgba(170,235,255,0.9)'; ctx.lineWidth = 2;
+  ctx.setLineDash([14, 10]); ctx.lineDashOffset = -animTime * 30;
+  ctx.beginPath();
+  if (horiz) { ctx.moveTo(o.x, o.y + o.h / 2); ctx.lineTo(o.x + o.w, o.y + o.h / 2); } else { ctx.moveTo(o.x + o.w / 2, o.y); ctx.lineTo(o.x + o.w / 2, o.y + o.h); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function paintNebula(g, b, variant) {                                                       // a soft cloud of coloured gas to hide in
+  const rnd = makeRng(Math.round(b.x * 13 + b.y * 7) + variant * 101), cx = BUSH_PAD + b.w / 2, cy = BUSH_PAD + b.h / 2;
+  const pal = [['150,100,255', '90,40,200'], ['70,200,255', '30,90,200'], ['255,120,210', '160,40,140']][variant % 3];
+  for (let i = 0; i < 18; i++) {
+    const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()), x = cx + Math.cos(a) * d * b.w * 0.42, y = cy + Math.sin(a) * d * b.h * 0.42, r = 10 + rnd() * 16;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(' + pal[0] + ',0.55)'); gr.addColorStop(1, 'rgba(' + pal[1] + ',0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 14; i++) { const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()); g.fillRect(cx + Math.cos(a) * d * b.w * 0.45, cy + Math.sin(a) * d * b.h * 0.45, 1.3, 1.3); }
+}
+
+// An alien seen from above: a slim body, a big head at the front with two huge black eyes, and glowing antennae.
+// Walks with little shuffling feet; its antennae flare red when it has spotted you.
+function drawAlien(h) {
+  const cx = h.x + h.w / 2, cy = h.y + h.h / 2, grey = h.look === 'grey';
+  const skin = grey ? '#b9c4cc' : '#6fd66a', skinD = grey ? '#7f8c96' : '#3a9c3a', skinL = grey ? '#e2eaef' : '#aaf3a2';
+  const walk = Math.sin(animTime * 9 + h.pts[0].x * 0.01), alert = !!h.alert && !h.dead;
+  ctx.save();
+  ctx.translate(cx, cy); ctx.rotate(h.angle);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(0, 1, 13, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = skinD;                                                                    // shuffling feet
+  [[-3, -4, walk], [-3, 4, -walk]].forEach(([fx, fy, off]) => { ctx.beginPath(); ctx.ellipse(fx + off * 2.2, fy, 3.2, 1.9, 0, 0, Math.PI * 2); ctx.fill(); });
+  ctx.strokeStyle = skinD; ctx.lineWidth = 1.7; ctx.lineCap = 'round';                     // spindly arms with three fingers
+  [-1, 1].forEach(s => {
+    const hx = 4 + s * walk * -1.6, hy = s * 10;
+    ctx.beginPath(); ctx.moveTo(0, s * 5); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.lineWidth = 1; for (let f = -1; f <= 1; f++) { ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + 2.4, hy + s * 1.2 + f * 1.3); ctx.stroke(); } ctx.lineWidth = 1.7;
+  });
+  const body = ctx.createLinearGradient(0, -6, 0, 6);
+  body.addColorStop(0, skinL); body.addColorStop(0.5, skin); body.addColorStop(1, skinD);
+  ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(-1, 0, 8, 6.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 0.9; ctx.stroke();
+  const head = ctx.createRadialGradient(6, -2, 1, 7, 0, 9);
+  head.addColorStop(0, skinL); head.addColorStop(1, skinD);
+  ctx.fillStyle = head; ctx.beginPath(); ctx.ellipse(7, 0, 6.6, 7.6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+  [-1, 1].forEach(s => {                                                                    // huge slanted black eyes
+    ctx.fillStyle = '#07070c'; ctx.beginPath(); ctx.ellipse(10.4, s * 3.6, 3.3, 1.9, s * 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = alert ? '#ff5a5a' : 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.ellipse(11.4, s * 3.2, 0.9, 0.6, 0, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.strokeStyle = skinD; ctx.lineWidth = 1;                                               // antennae with glowing tips
+  [-1, 1].forEach(s => {
+    ctx.beginPath(); ctx.moveTo(8, s * 3); ctx.quadraticCurveTo(14, s * 4, 17, s * 7.5 + walk * s * 0.6); ctx.stroke();
+    ctx.save(); ctx.shadowColor = alert ? '#ff3030' : '#4fd1ff'; ctx.shadowBlur = 6;
+    ctx.fillStyle = alert ? '#ff5a5a' : '#8fe6ff'; ctx.beginPath(); ctx.arc(17, s * 7.5 + walk * s * 0.6, 1.5, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  });
+  ctx.restore();
+  if (alert) {                                                                              // a "!" pops up beside the head
+    const bx = h.x + h.w / 2 + 12, by = h.y + 3 + Math.sin(animTime * 10) * 1.2;
+    ctx.font = 'bold 15px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(90,0,0,0.9)'; ctx.strokeText('!', bx, by);
+    ctx.fillStyle = '#ffdd44'; ctx.fillText('!', bx, by);
+  }
+}
+
+const GROUND_PAINTERS = { zoo: paintGroundZoo, field: paintGroundField, road: paintGroundRoad, mountain: paintGroundMountain, vader: paintGroundVader, space: paintGroundSpace };
 const groundCache = {};
 
 function groundTheme() { return GROUND_PAINTERS[currentLevel.theme] ? currentLevel.theme : 'zoo'; }
@@ -4306,12 +4538,12 @@ function paintVaderGate(g, sealed) {
 
 const GATE_PAINTERS = {
   zoo: paintZooGate, road: paintRoadGate,
-  field: g => paintTrailGate(g, false), mountain: g => paintTrailGate(g, true),
+  field: g => paintTrailGate(g, false), mountain: g => paintTrailGate(g, true), space: paintSpaceGate,
 };
 // where each theme's sign board sits, so the label lands on it, and a matching, legible colour
 const GATE_LABEL = {
   zoo: { y: 33, color: '#3a2a05' }, road: { y: 25, color: '#fff' },
-  field: { y: 19, color: '#fff3d6' }, mountain: { y: 19, color: '#1a2f3a' },
+  field: { y: 19, color: '#fff3d6' }, mountain: { y: 19, color: '#1a2f3a' }, space: { y: 74, color: '#dff6ff' },
 };
 
 function drawExitGate() {
@@ -4336,6 +4568,11 @@ function drawExitGate() {
   ctx.drawImage(cachedSprite(key, GATE_SPRITE_W, GATE_SPRITE_H, GATE_PAINTERS[theme] || paintZooGate),
     exitGate.x - GATE_PAD_X, -GATE_PAD_TOP, GATE_SPRITE_W, GATE_SPRITE_H);
   const lbl = GATE_LABEL[theme] || GATE_LABEL.zoo, cx = exitGate.x + exitGate.w / 2;
+  if (theme === 'space') {                                                           // the portal pulses
+    const pu = 0.5 + 0.5 * Math.sin(animTime * 2.6), gl = ctx.createRadialGradient(cx, 30, 2, cx, 30, 80);
+    gl.addColorStop(0, 'rgba(200,170,255,' + (0.35 + 0.3 * pu).toFixed(2) + ')'); gl.addColorStop(1, 'rgba(120,160,255,0)');
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = gl; ctx.fillRect(cx - 90, -10, 180, 110); ctx.restore();
+  }
   ctx.font = 'bold 15px Segoe UI'; ctx.textAlign = 'center'; ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.strokeText(currentLevel.exitLabel, cx, lbl.y);
   ctx.fillStyle = lbl.color; ctx.fillText(currentLevel.exitLabel, cx, lbl.y);
@@ -4543,13 +4780,14 @@ const FP_THEMES = {
   field:    { sky: ['#78b7ee', '#e0efd2'], fog: [224, 239, 210] },
   mountain: { sky: ['#8da9cf', '#e8f0f8'], fog: [232, 240, 248] },
   vader:    { sky: ['#06070a', '#1b1e27'], fog: [18, 20, 26] },
+  space:    { sky: ['#02030c', '#150d2e'], fog: [12, 9, 30] },
 };
 const FP_WALLS = {                                       // how tall each kind of obstacle stands, and its colour
   fence: { h: 24, c: '#a87b45' }, wall: { h: 56, c: '#7d7d7d' }, pillar: { h: 78, c: '#6a7787' },
   rock: { h: 34, c: '#8d8a82' }, hay: { h: 26, c: '#e0c35a' }, water: { h: 1.5, c: '#3f8fd0' },
-  waterfallCliff: { h: 110, c: '#7a7468' }, barrier: { h: 60, c: '#d94a3a' },
+  waterfallCliff: { h: 110, c: '#7a7468' }, barrier: { h: 60, c: '#d94a3a' }, forcefield: { h: 70, c: '#4fb8ff' }, hull: { h: 42, c: '#5a6678' },
 };
-const FP_BUSHES = { bush: { h: 28, c: '#3c8a3c' }, grass: { h: 24, c: '#7ab648' }, snow: { h: 18, c: '#e6eef4' } };
+const FP_BUSHES = { bush: { h: 28, c: '#3c8a3c' }, grass: { h: 24, c: '#7ab648' }, snow: { h: 18, c: '#e6eef4' }, nebula: { h: 34, c: '#8a5ae0' } };
 const FP_LOOKS = { zookeeper: ['#3f8f5a', '#5b4630', '#7a5a2e'], pedestrian: ['#c94a3a', '#2f3f66', null], hiker: ['#d9762b', '#3f4a3a', '#2f5f2f'] };
 
 const fpRgbCache = {};
@@ -4605,9 +4843,9 @@ function fpRects() {
   });
   bushes.forEach(b => {
     const sp = FP_BUSHES[b.style] || FP_BUSHES.bush;
-    rs.push({ x: b.x, y: b.y, w: b.w, h: b.h, ht: sp.h, rgb: fpRgb(sp.c), kind: 'bush', tex: fpTexture(b.style === 'snow' ? 'snow' : b.style === 'grass' ? 'grass' : 'bush', sp.c) });
+    rs.push({ x: b.x, y: b.y, w: b.w, h: b.h, ht: sp.h, rgb: fpRgb(sp.c), kind: 'bush', tex: fpTexture(b.style === 'snow' ? 'snow' : b.style === 'grass' ? 'grass' : b.style === 'nebula' ? 'nebula' : 'bush', sp.c) });
   });
-  rs.push({ x: GATE_X + 6, y: -40, w: GATE_W - 12, h: 30, ht: 130, rgb: [255, 236, 140], kind: 'exit' });
+  rs.push({ x: GATE_X + 6, y: -40, w: GATE_W - 12, h: 30, ht: 130, rgb: currentLevel.theme === 'space' ? [170, 150, 255] : [255, 236, 140], kind: 'exit' });
   return rs;
 }
 
@@ -4649,6 +4887,22 @@ function fpTexture(kind, hex) {
       wrap(o => { g.fillStyle = c; g.beginPath(); g.ellipse(x + o, y, r, r * 0.8, rnd() * 3, 0, Math.PI * 2); g.fill(); });
     }
     g.fillStyle = 'rgba(0,0,0,0.22)'; for (let i = 0; i < 60; i++) g.fillRect(rnd() * 128, 30 + rnd() * 96, 2 + rnd() * 3, 1 + rnd() * 2);
+  } else if (kind === 'nebula') {                                                            // drifting gas: soft translucent puffs and sparkles
+    for (let i = 0; i < 90; i++) {
+      const x = rnd() * 128, y = 8 + 118 * Math.sqrt(rnd()), r = 8 + rnd() * 16;
+      wrap(o => { const gr = g.createRadialGradient(x + o, y, 0, x + o, y, r); gr.addColorStop(0, rnd() < 0.5 ? 'rgba(170,120,255,0.5)' : 'rgba(255,130,220,0.45)'); gr.addColorStop(1, 'rgba(90,40,200,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x + o, y, r, 0, Math.PI * 2); g.fill(); });
+    }
+    g.fillStyle = 'rgba(255,255,255,0.9)'; for (let i = 0; i < 40; i++) g.fillRect(rnd() * 128, 10 + rnd() * 110, 1.5, 1.5);
+  } else if (kind === 'forcefield') {                                                        // a see-through energy sheet with bright scan lines
+    g.fillStyle = 'rgba(60,160,255,0.28)'; g.fillRect(0, 0, 128, 128);
+    for (let y = 0; y < 128; y += 16) { g.fillStyle = 'rgba(150,230,255,0.5)'; g.fillRect(0, y, 128, 2); }
+    for (let x = 0; x < 128; x += 32) { g.fillStyle = 'rgba(190,240,255,0.55)'; g.fillRect(x, 0, 2, 128); }
+    g.fillStyle = 'rgba(255,255,255,0.7)'; g.fillRect(0, 0, 128, 3); g.fillRect(0, 125, 128, 3);
+  } else if (kind === 'hull') {                                                              // plated station wreckage
+    const m = g.createLinearGradient(0, 0, 0, 128); m.addColorStop(0, '#8a96ac'); m.addColorStop(1, '#2e3548'); g.fillStyle = m; g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 2; for (let x = 0; x <= 128; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke(); } g.beginPath(); g.moveTo(0, 64); g.lineTo(128, 64); g.stroke();
+    g.fillStyle = '#5ad8ff'; for (let x = 8; x < 128; x += 32) g.fillRect(x, 20, 6, 6);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; for (let i = 0; i < 40; i++) g.fillRect(rnd() * 128, rnd() * 128, 2 + rnd() * 6, 1);
   } else if (kind === 'snow') {                                                              // a soft drift: pale lumps with blue-grey shadows
     g.fillStyle = fpSh(hex, -0.1); g.fillRect(0, 34, 128, 94);
     for (let i = 0; i < 46; i++) { const x = rnd() * 128, y = 16 + rnd() * 70, r = 10 + rnd() * 14; wrap(o => { g.fillStyle = fpRgCanvas(g, x + o, y, r, hex); g.beginPath(); g.arc(x + o, y, r, 0, Math.PI * 2); g.fill(); }); }
@@ -4684,7 +4938,7 @@ function fpTexture(kind, hex) {
   }
   return fpTexCache[key] = cv;
 }
-const FP_TEXTURED = { wall: 1, rock: 1, pillar: 1, hay: 1, barrier: 1, waterfallCliff: 1 };
+const FP_TEXTURED = { wall: 1, rock: 1, pillar: 1, hay: 1, barrier: 1, waterfallCliff: 1, forcefield: 1, hull: 1 };
 
 function fpDrawSlice(it, fog) {
   const r = it.r, s = FP_FOCAL / it.d, x = it.c * FP_COLW;
@@ -5142,6 +5396,7 @@ function fpCarSprite(kind, color, view) {
   });
 }
 function fpCar(p, v, ex, ey, yaw) {
+  if (v.kind === 'asteroid') { fpAsteroid(p, v); return; }
   const vw = fpView(v.dir > 0 ? 0 : Math.PI, yaw, p.ang), a = Math.atan2(v.y + v.h / 2 - ey, v.x + v.w / 2 - ex);
   const wApp = Math.abs(v.w * Math.sin(a - (v.dir > 0 ? 0 : Math.PI))) + Math.abs(v.h * Math.cos(a - (v.dir > 0 ? 0 : Math.PI)));
   fpSoftShadow(p, v.w * 0.58);
@@ -5249,6 +5504,69 @@ function fpVader(p, b, yaw) {
   fpHitFlash(p, b, 30, 16, 34);
 }
 
+/* Aliens and asteroids in first person */
+function fpAlienSprite(look, view, fr) {
+  return fpSprite('A' + look + view + fr, 28, 50, g => {
+    const grey = look === 'grey', skin = grey ? '#b9c4cc' : '#6fd66a', skinD = grey ? '#7f8c96' : '#3a9c3a', skinL = grey ? '#e2eaef' : '#aaf3a2', suit = grey ? '#3a4660' : '#2a5a3a';
+    const sw = fr < 0 ? 0 : Math.sin(fr / FP_FRAMES * Math.PI * 2), hy = 39;
+    const antennae = () => [-1, 1].forEach(sd => {
+      g.strokeStyle = skinD; g.lineWidth = 0.7; g.beginPath(); g.moveTo(sd * 2.4, hy + 6.4); g.quadraticCurveTo(sd * 5, hy + 10, sd * 6.4, hy + 12.4); g.stroke();
+      fpE(g, sd * 6.4, hy + 12.6, 1.3, 1.3, '#8fe6ff', 0, null); fpE(g, sd * 6.4, hy + 12.6, 2.4, 2.4, 'rgba(120,220,255,0.3)', 0, null);
+    });
+    if (view === 'side') {
+      const leg = (a, far) => { const fx = Math.sin(a) * 15, fy = 16 - Math.cos(a) * 15; fpLimb(g, 0, 16, fx, fy + 0.8, 3, far ? fpSh(suit, -0.3) : suit); fpE(g, fx + 1.2, fy - 0.3, 2.6, 1.2, far ? fpSh(skinD, -0.2) : skinD, 0, FP_LINE); };
+      const arm = (a, far) => { const hx = Math.sin(a) * 11, hyy = 29 - Math.cos(a) * 11; fpLimb(g, 0, 29, hx, hyy + 0.8, 2.2, far ? fpSh(skin, -0.3) : skin); fpE(g, hx, hyy, 1.4, 1.5, far ? fpSh(skinD, -0.2) : skinD, 0, FP_LINE); };
+      leg(-sw * 0.5, true); arm(sw * 0.55, true); leg(sw * 0.5, false);
+      fpBody(g, 0, 23, 4.4, 8.2, suit);
+      arm(-sw * 0.55, false);
+      fpE(g, 0.2, 31.6, 1.6, 2.4, skinD);
+      fpBody(g, 0.8, hy, 5.8, 7.2, skin);
+      fpE(g, 3.4, hy - 0.2, 2.8, 3.3, '#07070c', 0.3, FP_LINE); fpE(g, 4.2, hy + 0.5, 0.8, 0.8, 'rgba(255,255,255,0.85)', 0, null);
+      g.strokeStyle = skinD; g.lineWidth = 0.7; g.beginPath(); g.moveTo(1.6, hy + 6.2); g.quadraticCurveTo(6.4, hy + 9, 8.4, hy + 12.6); g.stroke();
+      fpE(g, 8.4, hy + 12.8, 1.3, 1.3, '#8fe6ff', 0, null); fpE(g, 8.4, hy + 12.8, 2.4, 2.4, 'rgba(120,220,255,0.3)', 0, null);
+      return;
+    }
+    const front = view === 'front';
+    [-1, 1].forEach(sd => { const lift = Math.max(0, sd * sw) * 1.8; fpLimb(g, sd * 2.4, 16, sd * 2.6, 2 + lift, 3, suit); fpE(g, sd * 2.6, 1.2 + lift, 2.5, 1.2, skinD, 0, FP_LINE); });
+    fpBody(g, 0, 23, 5.4, 8.4, suit);
+    [-1, 1].forEach(sd => { const hand = 20.5 + sd * -sw * 1.6, x = sd * 7.4; fpLimb(g, x, 29, x + sd * 0.6, hand + 1, 2.2, skin); fpE(g, x + sd * 0.6, hand, 1.5, 1.6, skinD, 0, FP_LINE); });
+    fpE(g, 0, 31.8, 1.8, 2.2, skinD);
+    fpBody(g, 0, hy, 6.4, 7.4, skin);
+    if (front) {
+      [-1, 1].forEach(sd => { fpE(g, sd * 3.1, hy - 0.8, 2.6, 3.4, '#07070c', sd * -0.45, FP_LINE); fpE(g, sd * 3.5, hy + 0.2, 0.8, 0.9, 'rgba(255,255,255,0.85)', 0, null); });
+      g.strokeStyle = skinD; g.lineWidth = 0.4; g.beginPath(); g.moveTo(-1.4, hy - 5.2); g.lineTo(1.4, hy - 5.2); g.stroke();
+    } else fpE(g, 0, hy + 1, 3.4, 3, skinL);
+    antennae();
+  });
+}
+function fpAlien(p, h, yaw) {
+  const vw = fpView(h.angle, yaw, p.ang), walking = h.wmode === 'walk' && !h.dead, look = h.look === 'grey' ? 'grey' : 'green';
+  fpSoftShadow(p, 9);
+  fpBlit(p, fpAlienSprite(look, vw.v, walking ? fpFrame(1.6, (h.pts[0].x % 9) / 9) : -1), vw.flip);
+  fpHitFlash(p, h, 24, 12, 26);
+  if (h.alert) fpAlertMark(p, 52);
+}
+
+function fpAsteroidSprite(size, color, seed) {
+  const r = size / 2 * 0.9, tot = Math.ceil(size * 1.2);
+  return fpSprite('M' + size + color + seed, tot, tot, g => {
+    const cy = r + 3, rnd = makeRng(seed * 977 + 13), pts = [];
+    for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2, k = 0.82 + rnd() * 0.28; pts.push([Math.cos(a) * r * k, cy + Math.sin(a) * r * k]); }
+    fpP(g, pts, fpRg(g, -r * 0.4, cy + r * 0.45, r * 0.1, r * 1.2, [[0, fpSh(color, 0.38)], [0.55, color], [1, fpSh(color, -0.6)]]), FP_LINE);
+    for (let i = 0; i < 4; i++) {
+      const a = rnd() * Math.PI * 2, d = rnd() * 0.55, x = Math.cos(a) * r * d, y = cy + Math.sin(a) * r * d, cr = r * (0.13 + rnd() * 0.12);
+      fpE(g, x, y, cr, cr * 0.8, 'rgba(0,0,0,0.33)', 0, null); g.strokeStyle = 'rgba(255,255,255,0.2)'; g.lineWidth = 0.4; g.beginPath(); g.ellipse(x, y, cr, cr * 0.8, 0, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    }
+  }, 6);
+}
+function fpAsteroid(p, v) {                                                                 // a rock hanging in the air, always showing its good side
+  const size = Math.round(v.w), s = fpAsteroidSprite(size, v.color, v.seed);
+  fpSoftShadow(p, size * 0.55);
+  const lift = 5 + Math.sin(animTime * 1.3 + v.seed) * 1.4;
+  fpBlit({ sx: p.sx, by: p.by - lift * p.sv, s: p.s, sv: p.sv }, s, false);
+  if (v.hitFlash > 0) fpOval({ sx: p.sx, by: p.by - lift * p.sv, s: p.s, sv: p.sv }, 0, size * 0.5, size * 0.5, size * 0.5, 'rgba(255,255,255,' + (0.6 * v.hitFlash / 0.15).toFixed(2) + ')');
+}
+
 function fpHazard(p, h, yaw) {
   if (h.dead) { ctx.globalAlpha *= Math.max(0, 1 - h.deadT / DEFEAT_FADE); p.sv *= Math.max(0.15, 1 - h.deadT / 0.25); }
   else h.alert = canDetect(h);
@@ -5256,6 +5574,7 @@ function fpHazard(p, h, yaw) {
   else if (h.type === 'dog') fpDog(p, h, yaw);
   else if (h.type === 'cow') fpCow(p, h, yaw);
   else if (h.type === 'reindeer') fpReindeer(p, h, yaw);
+  else if (h.type === 'alien') fpAlien(p, h, yaw);
 }
 function fpPickup(p, pk) {
   const bob = Math.sin(animTime * 3 + pk.x) * 2, cy = p.by - (16 + bob) * p.sv;
@@ -5360,6 +5679,13 @@ function drawFirstPerson() {
   const sky = ctx.createLinearGradient(0, 0, 0, FP_HORIZON);
   sky.addColorStop(0, th.sky[0]); sky.addColorStop(1, th.sky[1]);
   ctx.fillStyle = sky; ctx.fillRect(0, 0, W, FP_HORIZON + 1);
+  if (currentLevel.theme === 'space') {                                                      // a sky full of stars, turning as you do
+    for (let i = 0; i < 140; i++) {
+      const a = ((i * 2654435761 % 4096) / 4096) * Math.PI * 2, y = ((i * 40503 % 1024) / 1024) * (FP_HORIZON - 6), tw = 0.5 + 0.5 * Math.sin(animTime * 2 + i);
+      const x = (((a - yaw) / (Math.PI * 2) % 1 + 1) % 1) * W * 2 - W * 0.5;
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.3 + 0.5 * tw).toFixed(2) + ')'; ctx.fillRect(x, y, i % 7 === 0 ? 2 : 1, i % 7 === 0 ? 2 : 1);
+    }
+  }
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   fpDrawFloor(ex, ey, yaw, fog);
   const items = [];
@@ -5387,6 +5713,7 @@ try { showMinimap = localStorage.getItem('capybara_minimap') !== '0'; } catch (e
 const MM_W = 168, MM_H = Math.round(168 * H / W), MM_X = 14, MM_Y = H - MM_H - 14, MM_SX = MM_W / W, MM_SY = MM_H / H;
 
 const MM_STYLES = {
+  space:    { label: 'STAR CHART',    shape: 'round',  bg: '#080818', frame: '#8a6aff', ground: 0.6,  wash: 'rgba(8,6,30,0.25)',    wall: '#4a5a78', fence: '#6a7a98', water: '#3a6aff', bush: '#a070ff', exit: '#9fe8ff', hunter: '#6fe86a', seen: '#ff3b3b', cone: 'rgba(111,232,106,0.2)', coneSeen: 'rgba(255,50,50,0.5)', car: '#c8b8a0', baby: '#ff7aa8', pick: '#ffd34d', you: '#ffffff', youHide: '#c0a0ff', fpWedge: 'rgba(160,130,255,0.35)' },
   zoo:      { label: 'ZOO MAP',       shape: 'round',  bg: '#efe3bf', frame: '#6b4a2a', ground: 0.8,  wash: 'rgba(255,240,200,0.3)', wall: '#7a5a3a', fence: '#9a6a30', water: '#4a90c8', bush: '#3f8f3f', exit: '#e0a800', hunter: '#c0392b', seen: '#ff2a2a', cone: 'rgba(192,57,43,0.24)', coneSeen: 'rgba(255,40,40,0.5)', car: '#d9762b', baby: '#e0457f', pick: '#e0a800', you: '#1d4ed8', youHide: '#2e8b3a', fpWedge: 'rgba(29,78,216,0.35)' },
   road:     { label: 'ROAD GPS',      shape: 'square', bg: '#0f1318', frame: '#f2c318', ground: 0.3,  wash: 'rgba(10,14,20,0.35)',   wall: '#5d636d', fence: '#7a6a4a', water: '#2f6fb5', bush: '#2f9a55', exit: '#34e0a0', hunter: '#ff6a4a', seen: '#ff2a2a', cone: 'rgba(255,106,74,0.2)',  coneSeen: 'rgba(255,40,40,0.5)', car: '#ffd23a', baby: '#ff7aa8', pick: '#ffd34d', you: '#4fd1ff', youHide: '#7be37b', fpWedge: 'rgba(79,209,255,0.35)' },
   field:    { label: 'FIELD SURVEY',  shape: 'ticks',  bg: '#1c2a18', frame: '#c9b25a', ground: 0.55, wash: 'rgba(20,50,20,0.35)',   wall: '#8a7448', fence: '#a8884a', water: '#4a90c8', bush: '#9ad04f', exit: '#ffe066', hunter: '#ff8a4a', seen: '#ff3b3b', cone: 'rgba(255,138,74,0.22)', coneSeen: 'rgba(255,50,50,0.5)', car: '#e8873a', baby: '#ff7aa8', pick: '#ffe066', you: '#ffffff', youHide: '#a8f08a', fpWedge: 'rgba(255,255,255,0.3)' },
