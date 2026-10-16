@@ -927,10 +927,6 @@ const VADER_REGEN_DELAY = 2.0;          // starts this long after you last hit h
 const VADER_WOUND_TIME = 20;            // every hit leaves him WOUNDED this long (refreshed by each hit): no healing at all...
 const VADER_WOUND_SLOW = 0.5;           // ...he moves and swings at half speed (windups and recoveries take twice as long)...
 const VADER_WOUND_DAMAGE = 0.5;         // ...and his lightsaber hits do half damage
-const VADER_STAGGER = 0.5;              // every saber hit also staggers him this long: he flinches, loses any swing he was winding up, and can't act
-const VADER_STAGGER_NIP = 0.2;          // a baby's nip only makes him flinch for this long
-const VADER_STAGGER_IMMUNE = 0.6;       // after a stagger he can't be staggered again for this long, so a swarm can't lock him down for good
-const VADER_STAGGER_RECOIL = 8;         // and he's knocked back this far
 const PLAYER_IFRAMES = 0.9;             // brief invulnerability after taking a hit
 const VADER_REACH = 66;                 // he swings at anything this close (centre to centre), and it lands if you're still this close
 const VADER_ARC = 70 * DEG;
@@ -1197,7 +1193,7 @@ const VADER_WANDER_RADIUS = 90;         // how far he'll pace from his starting 
 
 function makeBoss(def) {
   return { ...def, maxHp: def.hp, state: 'wait', t: 0, aim: Math.PI / 2, lockAim: Math.PI / 2,
-           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2, regenDelay: 0, regenAcc: 0, woundT: 0, staggerT: 0, staggerCd: 0,
+           dead: false, deadT: 0, hitFlash: 0, enraged: false, breathT: 1.2, regenDelay: 0, regenAcc: 0, woundT: 0,
            speed: def.speed || 50, wx: def.x, wy: def.y, wr: VADER_WANDER_RADIUS, wmode: 'pause', wt: 1 + Math.random() };
 }
 
@@ -1297,13 +1293,6 @@ function updateBoss(dt) {
 
   b.breathT -= dt;
   if (b.breathT <= 0) { sfxVaderBreath(); b.breathT = 2.4; }
-
-  b.staggerCd = Math.max(0, b.staggerCd - dt);
-  if (b.staggerT > 0) {                                     // staggered: frozen mid-flinch, nothing progresses
-    b.staggerT -= dt;
-    if (b.staggerT <= 0) { b.staggerT = 0; b.staggerCd = VADER_STAGGER_IMMUNE; }
-    return;
-  }
 
   // between swings, and once he's out of your reach, he'll pace a little around where he's standing —
   // never toward you, so he still never actually gives chase.
@@ -1794,7 +1783,7 @@ function babyNip(f, tg, k) {
   const r = tg.ref, c = center(r), dmg = FRIEND_ATTACK_DAMAGE;
   if (tg.kind === 'boss') {
     r.hp -= dmg; r.hitFlash = Math.max(r.hitFlash, 0.12);
-    woundBoss(true);                                                                     // a nip wounds him too
+    woundBoss();                                                                     // a nip wounds him too
     floaters.push({ x: c.x, y: r.y - 6 - k * 11, t: 0, text: '-' + fmtDamage(dmg) });
     spawnSparks(f.x, f.y); sfxNip();
     if (r.hp <= 0) defeatBoss();
@@ -4366,7 +4355,6 @@ function drawVaderTelegraph(b) {
 function drawVader(b) {
   const x = b.x, y = b.y, cx = x + b.w / 2, rage = b.enraged ? 1.25 : 1;
   ctx.save();
-  if (b.staggerT > 0) ctx.translate(Math.sin(animTime * 70) * 2.2, 0);                // shudders while staggered
   if (b.dead) {                                  // topples over and fades
     const cy = y + b.h / 2;
     ctx.globalAlpha = Math.max(0, 1 - b.deadT / 1.4);
@@ -4439,18 +4427,11 @@ function drawVader(b) {
 
 // Any hit on Vader (saber or a baby's nip) leaves him WOUNDED for VADER_WOUND_TIME: he can't heal at all until it
 // runs out, and each new hit starts the 20 seconds again.
-function woundBoss(nip) {
+function woundBoss() {
   if (boss.woundT <= 0) floaters.push({ x: boss.x + boss.w / 2, y: boss.y - 28, t: 0, text: 'WOUNDED', tone: 'blue' });
   boss.woundT = VADER_WOUND_TIME;
   boss.regenDelay = VADER_REGEN_DELAY;
   boss.regenAcc = 0;
-  if (boss.staggerT <= 0 && boss.staggerCd <= 0) {                                  // a hit staggers him: he flinches, is shoved back and loses his swing
-    boss.staggerT = nip ? VADER_STAGGER_NIP : VADER_STAGGER;
-    if (boss.state === 'windup') { boss.state = 'guard'; boss.t = 0; }
-    const bc = center(boss), pc = center(player), d = Math.hypot(bc.x - pc.x, bc.y - pc.y) || 1;
-    moveAgainst(boss, (bc.x - pc.x) / d * VADER_STAGGER_RECOIL, (bc.y - pc.y) / d * VADER_STAGGER_RECOIL, friendSolids(currentLevel));
-    if (!nip) floaters.push({ x: bc.x, y: boss.y - 40, t: 0, text: 'STAGGERED', tone: 'blue' });
-  }
 }
 
 function drawBossBar() {
@@ -5247,7 +5228,6 @@ function fpVaderSprite(view) {
 function fpVader(p, b, yaw) {
   if (b.dead) ctx.globalAlpha *= Math.max(0, 1 - b.deadT / 1.4);
   const heading = (b.state === 'windup' || b.state === 'strike') ? b.lockAim : b.aim, vw = fpView(heading, yaw, p.ang);
-  if (b.staggerT > 0) p.sx += Math.sin(animTime * 70) * 2.5 * p.s;                      // shudders while staggered
   if (b.enraged && !b.dead) {
     const cy = p.by - 36 * p.sv, g = ctx.createRadialGradient(p.sx, cy, 0, p.sx, cy, 48 * p.s);
     g.addColorStop(0, 'rgba(255,40,40,0.35)'); g.addColorStop(1, 'rgba(255,40,40,0)');
