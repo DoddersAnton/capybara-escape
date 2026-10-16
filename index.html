@@ -112,6 +112,15 @@
     cursor: pointer; font-size: 14px;
   }
   #muteBtn:hover { background: rgba(0,0,0,0.6); }
+  #babyCmd { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+  #babyCmd.hidden { display: none; }
+  #babyCmd button {
+    pointer-events: auto; touch-action: manipulation; background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.7);
+    color: #fff; border-radius: 6px; padding: 4px 9px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; white-space: nowrap;
+  }
+  #babyCmd button:hover { background: rgba(0,0,0,0.65); }
+  #babyCmd button.active { background: rgba(255, 204, 51, 0.85); border-color: #ffe28a; color: #2a1f05; text-shadow: none; }
+  #babyCmd kbd { font: inherit; font-size: 10px; opacity: 0.75; margin-left: 2px; }
 
   /* ---------- On-screen controls (for phones and tablets) ---------- */
   #touchControls {
@@ -162,6 +171,9 @@
     #hpPips .pip { width: 9px; height: 7px; }
     #livesLabel { font-size: 11px; }
     #muteBtn { padding: 1px 6px; font-size: 12px; margin-top: 3px; }
+    #babyCmd { margin-top: 3px; gap: 4px; }
+    #babyCmd button { padding: 3px 6px; font-size: 11px; }
+    #babyCmd kbd { display: none; }
     #friendsMeter { font-size: 11px; margin-top: 2px; }
     #powerRow { font-size: 10px; }
     #friendsBar { width: 70px; height: 6px; border-width: 1px; }
@@ -210,6 +222,10 @@
         <div id="friendsBar"><div id="friendsFill"></div></div>
         <div id="powerRow" class="hidden">💪 +<span id="powerVal">0</span> damage</div>
       </div>
+      <div id="babyCmd" class="hidden">
+        <button id="atkBtn" title="Send your baby capybaras to attack (F)">⚔ Attack <kbd>F</kbd></button>
+        <button id="retBtn" title="Call your baby capybaras back to you (R)">↩ Retreat <kbd>R</kbd></button>
+      </div>
       <button id="muteBtn" title="Toggle sound">🔊</button>
     </div>
   </div>
@@ -236,7 +252,8 @@
     on their own, hide in bushes and tall grass, and bolt if you get too close,
     so you'll need to give chase! Chase one into an exit and it escapes to the next level (you'll find it there instead). Catch one and it follows you, and <b>each one
     adds 0.15 damage to every hit</b> (so your lightsaber hits a little harder).
-    Watch the meter in the top corner.
+    Watch the meter in the top corner. Your baby capybaras only fight when you <b>command</b> them: press <b>F</b> (or the Attack button) to send them after the nearest
+    person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
     follow-cam, or true first person through the capybara's own eyes (there,
@@ -721,7 +738,7 @@ const level4 = {
 // A duel instead of a stealth level: the exit stays sealed behind an energy barrier until Darth Vader is defeated.
 const level5 = {
   name: "Level 5 — Vader's Lair",
-  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will break formation and surround him once you engage, each nipping in for 0.35 damage whenever it gets the chance — though his swing shoves back any of them caught in it. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
+  tip: "Darth Vader guards the escape pod. He won't chase you, but he strikes anything that comes within reach with his red lightsaber, for 1 damage. You have 7 health, and you regenerate one every 2 seconds you go without being hit. Watch for the red warning arc, step out of it and strike while he recovers, or hold B to block his blow. Any baby capybaras following you will surround him when you command them to attack (F), each nipping in for 0.1 damage whenever it gets the chance (R calls them back) — though his swing shoves back any of them caught in it. Don't stall: he heals about one health every 1.3 seconds while you leave him alone. Defeat him to unseal the exit.",
   theme: 'vader',
   difficulty: { speed: 1, vision: 1, fill: 1, decay: 0.6 },
   exitLabel: 'ESCAPE POD',
@@ -769,6 +786,8 @@ window.addEventListener('keydown', e => {
   // Typing in the name box, or pressing Enter/Space on a focused overlay button, is handled by that control itself.
   if (t && (t.tagName === 'INPUT' || (t.tagName === 'BUTTON' && t.closest('.overlay')))) return;
   if (state === 'playing' && e.key.toLowerCase() === 'v' && !e.repeat) cycleView();
+  if (state === 'playing' && e.key.toLowerCase() === 'f' && !e.repeat) commandAttack();
+  if (state === 'playing' && e.key.toLowerCase() === 'r' && !e.repeat) commandRetreat();
   if (state === 'playing' && e.key.toLowerCase() === 'm' && !e.repeat) { showMinimap = !showMinimap; try { localStorage.setItem('capybara_minimap', showMinimap ? '1' : '0'); } catch (err) {} }
   if ((e.key === 'Enter' || e.key === ' ')) {
     const wasPlaying = state === 'playing';
@@ -1456,12 +1475,16 @@ const FRIEND_NOTICE_EXIT = 150;         // ...and settles back down once you're 
 const FRIEND_ROAM_SPEED = 46;           // ambling around when unbothered
 const FRIEND_FLEE_SPEED = 108;          // running speed once startled — still well below your own
 const FRIEND_ATTACK_RANGE = 42;         // how close a following baby must be to Vader to get a nip in
-const FRIEND_ATTACK_DAMAGE = 0.35;      // damage each nip deals
+const FRIEND_ATTACK_DAMAGE = 0.1;       // damage each nip deals
 const FRIEND_ATTACK_COOLDOWN = 1.3;     // seconds between nips from the same baby
 const FRIEND_ENGAGE_RANGE = 220;        // how close you need to get to Vader before the babies break formation
 const FRIEND_SWARM_RADIUS = 34;         // how far out they ring around him once they do
 const FRIEND_SWARM_SPEED = 95;          // how fast they scurry into position around him
 const FRIEND_KNOCKBACK = 48;            // how far a baby caught in Vader's swing gets shoved back
+const FRIEND_COMMAND_RANGE = 320;       // on the attack command, babies go after anything this close to YOU (Vader, people, reindeer, cars — never dogs or cows)
+const FRIEND_ATTACK_SPEED = 150;        // how fast they charge their target
+const FRIEND_ATTACK_REACH = 26;         // how close to the target's body a baby needs to be to get a nip in
+const FRIEND_RETREAT_SPEED = 1600;      // a retreat zips them back to you at this speed (px/s), so it's near enough instant
 const DAMAGE_PER_FRIEND = 0.15;         // each baby capybara that follows you adds this much damage to every hit
 const friendsFound = new Set();
 // Babies that slipped out through an exit gate: id -> { level (the one they ended up in), x, y (where they arrive) }.
@@ -1659,11 +1682,13 @@ function updateFriends(dt) {
 
 // Collected babies trot along behind you in a line, retracing the path you walked. Each one is also a power-up.
 const FOLLOW_SPACING = 22;              // how far behind the one in front each baby walks (px along your path)
+let babyMode = 'follow';                // 'follow' (the default: in line, never attacking) or 'attack' (go for anything near you)
 let followers = [];                     // one per baby found: { sx, sy (where it was picked up), joinT, x, y, face, ph }
 let trail = [], trailTotal = 0;         // the path you've walked: points with the distance travelled so far
 
 function resetTrail() {
   const pc = center(player);
+  babyMode = 'follow';
   trail = [{ x: pc.x, y: pc.y, d: 0 }];
   trailTotal = 0;
   followers.length = 0;
@@ -1687,29 +1712,46 @@ function updateFollowers(dt) {
   if (moved >= 2) { trailTotal += moved; trail.push({ x: pc.x, y: pc.y, d: trailTotal }); }
   const keep = (followers.length + 1) * FOLLOW_SPACING + 30;
   while (trail.length > 2 && trail[1].d < trailTotal - keep) trail.shift();
-  // The babies stay in line while you're crossing the room, then break off to surround Vader once you're
-  // actually engaging him, rather than dashing across the room ahead of you the moment the level loads.
-  const fighting = !!(boss && !boss.dead) && Math.hypot(pc.x - center(boss).x, pc.y - center(boss).y) < FRIEND_ENGAGE_RANGE;
+  // The babies stay in line behind you until you command them to attack (F, or the Attack button). Then each one
+  // picks the nearest target near you — Vader, a person, a reindeer or a car, but never a dog or a cow — rings
+  // around it and nips it. Retreat (R) sends them straight back to you and stops the attack.
+  const attacking = babyMode === 'attack', targets = attacking ? babyTargets() : [], load = new Map();
   followers.forEach((f, k) => {
-    if (fighting) {
-      // Break out of the line and ring around Vader instead of queuing behind you — with a slow prowl, so it
-      // reads as a swarm circling him rather than parked statues.
+    if (attacking) {
+      f.retargetT = (f.retargetT || 0) - dt;
+      if (!babyTargetOk(f.target, pc, 1.25) || f.retargetT <= 0) {
+        let best = null, bestCost = Infinity;
+        targets.forEach(t => {
+          if (!babyTargetOk(t, pc, 1)) return;
+          const c = center(t.ref), cost = Math.hypot(c.x - f.x, c.y - f.y) + 30 * (load.get(t.ref) || 0);
+          if (cost < bestCost) { bestCost = cost; best = t; }
+        });
+        f.target = best; f.retargetT = 1.5 + Math.random();
+      }
+    } else f.target = null;
+    const tg = f.target;
+    if (tg) load.set(tg.ref, (load.get(tg.ref) || 0) + 1);
+
+    if (tg) {
       if (!f.swarming) { f.swarming = true; f.swarmAng = (k / followers.length) * Math.PI * 2 + f.ph; }
       f.joinT = Math.min(1, f.joinT + dt / 0.3);
-      const bc = center(boss), ang = f.swarmAng + animTime * 0.25;
-      const tx = bc.x + Math.cos(ang) * FRIEND_SWARM_RADIUS, ty = bc.y + Math.sin(ang) * FRIEND_SWARM_RADIUS;
+      const tc = center(tg.ref), ang = f.swarmAng + animTime * 0.25, ring = tg.kind === 'boss' ? FRIEND_SWARM_RADIUS : 20;
+      const tx = tc.x + Math.cos(ang) * ring, ty = tc.y + Math.sin(ang) * ring;
       const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
       if (d > 1) {
-        const step = Math.min(d, FRIEND_SWARM_SPEED * dt);
-        f.x += dx / d * step; f.y += dy / d * step;
+        const step = Math.min(d, FRIEND_ATTACK_SPEED * dt), box = { x: f.x - 8, y: f.y - 6, w: 16, h: 12 };
+        const solids = friendSolids(currentLevel);                                       // they scurry round walls and fences, they don't pass through them
+        if (collidesAny(box, solids)) { box.x += dx / d * step; box.y += dy / d * step; }   // (but one already touching something just steps clear)
+        else moveAgainst(box, dx / d * step, dy / d * step, solids);
+        f.x = box.x + 8; f.y = box.y + 6;
         f.face = Math.atan2(dy, dx);
       } else {
-        f.face += normAngle(Math.atan2(bc.y - f.y, bc.x - f.x) - f.face) * 0.1;     // in position: just glare at him
+        f.face += normAngle(Math.atan2(tc.y - f.y, tc.x - f.x) - f.face) * 0.1;         // in position: just glare at it
       }
     } else {
-      if (f.swarming) { f.swarming = false; f.joinT = 0; f.sx = f.x; f.sy = f.y; }  // fight's over — fall back into line
+      if (f.swarming) { f.swarming = false; f.joinT = 0; f.sx = f.x; f.sy = f.y; f.joinDur = 0.45; }   // nothing left to fight — fall back into line
       const target = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING), ahead = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING + 8);
-      f.joinT = Math.min(1, f.joinT + dt / 0.45);                                   // newcomers (or fresh from the fight) scamper over to their place
+      f.joinT = Math.min(1, f.joinT + dt / (f.joinDur || 0.45));                        // newcomers (or fresh from the fight) scamper over to their place
       const e = f.joinT * f.joinT * (3 - 2 * f.joinT);
       const nx = f.sx + (target.x - f.sx) * e, ny = f.sy + (target.y - f.sy) * e;
       const dx = ahead.x - target.x, dy = ahead.y - target.y;
@@ -1720,22 +1762,89 @@ function updateFollowers(dt) {
 
     if (f.lungeT > 0) f.lungeT -= dt;
     f.atkCd = Math.max(0, (f.atkCd || 0) - dt);
-    if (fighting && f.joinT >= 1) {                                                 // babies join the fight: a nip whenever one gets close enough
-      const bc = center(boss), dist = Math.hypot(f.x - bc.x, f.y - bc.y);
-      if (dist <= FRIEND_ATTACK_RANGE && f.atkCd <= 0) {
-        boss.hp -= FRIEND_ATTACK_DAMAGE;
-        boss.hitFlash = Math.max(boss.hitFlash, 0.12);
-        woundBoss(true);                                                            // a nip wounds him too
-        floaters.push({ x: bc.x, y: boss.y - 6 - k * 11, t: 0, text: '-' + fmtDamage(FRIEND_ATTACK_DAMAGE) });
-        spawnSparks(f.x, f.y);
-        sfxNip();
-        f.lungeT = 0.22;
-        f.lungeAng = Math.atan2(bc.y - f.y, bc.x - f.x);
-        f.atkCd = FRIEND_ATTACK_COOLDOWN + Math.random() * 0.4;
-        if (boss.hp <= 0) defeatBoss();
-      }
+    if (tg && f.joinT >= 1 && f.atkCd <= 0 && babyGap(f, tg.ref) <= FRIEND_ATTACK_REACH) {   // close enough: a nip
+      babyNip(f, tg, k);
+      f.lungeT = 0.22;
+      f.lungeAng = Math.atan2(center(tg.ref).y - f.y, center(tg.ref).x - f.x);
+      f.atkCd = FRIEND_ATTACK_COOLDOWN + Math.random() * 0.4;
     }
   });
+  updateBabyCmdUI();
+}
+
+// Everything the babies are allowed to bite: Vader, anyone the saber can hit (people and reindeer — dogs and cows are
+// off limits) and cars.
+function babyTargets() {
+  const list = [];
+  if (boss && !boss.dead) list.push({ kind: 'boss', ref: boss });
+  hazards.forEach(h => { if (!h.dead && SABER_TARGETS[h.type]) list.push({ kind: 'hazard', ref: h }); });
+  vehicles.forEach(v => { if (!v.dead) list.push({ kind: 'car', ref: v }); });
+  return list;
+}
+function babyTargetOk(t, pc, slack) {
+  if (!t || t.ref.dead) return false;
+  const c = center(t.ref);
+  return Math.hypot(c.x - pc.x, c.y - pc.y) <= FRIEND_COMMAND_RANGE * slack;
+}
+function babyGap(f, r) {                                                                 // distance from a baby to the nearest point of a target's body
+  const nx = Math.max(r.x, Math.min(f.x, r.x + r.w)), ny = Math.max(r.y, Math.min(f.y, r.y + r.h));
+  return Math.hypot(nx - f.x, ny - f.y);
+}
+function babyNip(f, tg, k) {
+  const r = tg.ref, c = center(r), dmg = FRIEND_ATTACK_DAMAGE;
+  if (tg.kind === 'boss') {
+    r.hp -= dmg; r.hitFlash = Math.max(r.hitFlash, 0.12);
+    woundBoss(true);                                                                     // a nip wounds him too
+    floaters.push({ x: c.x, y: r.y - 6 - k * 11, t: 0, text: '-' + fmtDamage(dmg) });
+    spawnSparks(f.x, f.y); sfxNip();
+    if (r.hp <= 0) defeatBoss();
+  } else if (tg.kind === 'hazard') {
+    r.hp -= dmg; r.hitFlash = 0.15;
+    floaters.push({ x: c.x, y: r.y - 16 - (k % 3) * 9, t: 0, text: '-' + fmtDamage(dmg) });
+    spawnSparks(f.x, f.y); sfxNip();
+    if (r.hp <= 0) { r.dead = true; r.deadT = 0; sfxDefeat(); }
+  } else {
+    r.hp -= dmg; r.hitFlash = 0.15;
+    floaters.push({ x: c.x, y: r.y - 12 - (k % 3) * 9, t: 0, text: '-' + fmtDamage(dmg) });
+    spawnSparks(f.x, f.y); sfxNip();
+    if (r.hp <= 0) { r.dead = true; breakCar(r); sfxCarBreak(); }
+  }
+}
+
+// The two commands. Attack sends every baby after the nearest target; Retreat cancels that and zips them all straight
+// back into line behind you.
+function commandAttack() {
+  if (!followers.length || state !== 'playing') return;
+  if (babyMode !== 'attack') {
+    babyMode = 'attack';
+    const pc = center(player);
+    floaters.push({ x: pc.x, y: player.y - 22, t: 0, text: 'ATTACK!', tone: 'blue' });
+    sfxNip();
+  }
+  updateBabyCmdUI();
+}
+function commandRetreat() {
+  if (!followers.length || state !== 'playing') return;
+  const pc = center(player), wasAttacking = babyMode === 'attack';
+  babyMode = 'follow';
+  followers.forEach((f, k) => {
+    const slot = trailAt(trailTotal - (k + 1) * FOLLOW_SPACING);
+    f.target = null; f.swarming = false;
+    f.sx = f.x; f.sy = f.y; f.joinT = 0;
+    f.joinDur = Math.max(0.06, Math.min(0.4, Math.hypot(slot.x - f.x, slot.y - f.y) / FRIEND_RETREAT_SPEED));
+  });
+  floaters.push({ x: pc.x, y: player.y - 22, t: 0, text: wasAttacking ? 'RETREAT!' : 'COME BACK!', tone: 'blue' });
+  sfxYelp();
+  updateBabyCmdUI();
+}
+let lastBabyCmd = '';
+function updateBabyCmdUI() {
+  const show = state === 'playing' && followers.length > 0, key = show + babyMode;
+  if (key === lastBabyCmd) return;
+  lastBabyCmd = key;
+  document.getElementById('babyCmd').classList.toggle('hidden', !show);
+  document.getElementById('atkBtn').classList.toggle('active', babyMode === 'attack');
+  document.getElementById('retBtn').classList.toggle('active', babyMode !== 'attack');
 }
 
 function drawFollowers() {
@@ -5452,6 +5561,7 @@ function drawScene() {
 }
 
 function updateHud(seenNow) {
+  updateBabyCmdUI();
   const guardFill = document.getElementById('guardFill');
   guardFill.style.width = (player.guard / GUARD_MAX * 100).toFixed(0) + '%';
   guardFill.style.background = player.guardBroken > 0 ? '#8a94a0' : (player.guard < GUARD_MAX * 0.25 ? '#ff8a33' : '#4fd1ff');
@@ -5787,6 +5897,10 @@ touchControls.querySelectorAll('.tc-btn').forEach(btn => {
   });
   const release = () => { pressTouchKey(key, false); btn.classList.remove('down'); };
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, release));
+});
+[['atkBtn', commandAttack], ['retBtn', commandRetreat]].forEach(([id, fn]) => {      // the on-screen command buttons (mouse or touch)
+  const btn = document.getElementById(id);
+  btn.addEventListener('pointerdown', e => { e.preventDefault(); ensureAudio(); fn(); btn.blur(); });
 });
 touchControls.addEventListener('contextmenu', e => e.preventDefault());   // no long-press menu
 
