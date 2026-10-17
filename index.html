@@ -792,7 +792,7 @@ function makeAsteroids(lanes) {
 
 const level6 = {
   name: 'Level 6 — Deep Space',
-  tip: "Your escape pod has drifted into an asteroid field, and aliens patrol the wreckage between the lanes. Dodge the tumbling asteroids — or smash them with your lightsaber (10 health, 2 damage a hit) or block one head-on with B — and duck into the purple nebula clouds to break the aliens' line of sight. Aliens have 5 health and your lightsaber does 1 damage a hit. Reach the warp gate!",
+  tip: "Your escape pod has drifted into an asteroid field, and aliens patrol the wreckage between the lanes. Dodge the tumbling asteroids — or smash them with your lightsaber (10 health, 2 damage a hit) or hold B to block one from any direction — and duck into the purple nebula clouds to break the aliens' line of sight. Aliens have 5 health and your lightsaber does 1 damage a hit. Reach the warp gate!",
   theme: 'space',
   difficulty: { speed: 1.15, vision: 1.1, fill: 0.85, decay: 0.8 },
   exitLabel: 'WARP GATE',
@@ -1235,21 +1235,22 @@ function breakGuard() {
 // Can the raised saber stop this car? Only if it's in front of the capybara.
 function canBlockCar(v) {
   if (!player.blocking) return false;
+  if (v.kind === 'asteroid') return true;                    // the saber's spin-guard stops asteroids from any direction
   const pc = center(player), vc = center(v);
   return Math.abs(normAngle(Math.atan2(vc.y - pc.y, vc.x - pc.x) - player.facing)) <= BLOCK_ARC;
 }
 
 // The car bounces off the saber: it's thrown back, crawls for a moment, and takes damage. You lose some guard.
 function deflectCar(v) {
-  const pc = center(player);
-  v.x -= v.dir * CAR_KNOCKBACK;
+  const pc = center(player), vc = center(v), aim = v.kind === 'asteroid' ? Math.atan2(vc.y - pc.y, vc.x - pc.x) : player.facing;
+  v.x += (v.kind === 'asteroid' ? (vc.x >= pc.x ? 1 : -1) : -v.dir) * CAR_KNOCKBACK;   // cars are thrown back the way they came; asteroids are batted away from you
   v.stun = CAR_STUN;
   v.hp -= BLOCK_CAR_DAMAGE + damageBonus();
   v.hitFlash = 0.15;
   player.guard = Math.max(0, player.guard - BLOCK_HIT_COST);
   player.guardDelay = GUARD_REGEN_DELAY;
   floaters.push({ x: pc.x, y: player.y - 16, t: 0, text: 'BLOCK', tone: 'blue' });
-  spawnSparks(pc.x + Math.cos(player.facing) * 22, pc.y + Math.sin(player.facing) * 22);
+  spawnSparks(pc.x + Math.cos(aim) * 22, pc.y + Math.sin(aim) * 22);
   if (v.hp <= 0) { v.dead = true; breakCar(v); sfxCarBreak(); }
   else sfxBlock();
   if (player.guard <= 0) breakGuard();
