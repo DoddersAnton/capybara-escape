@@ -617,7 +617,7 @@ const level1 = {
 
 const level2 = {
   name: 'Level 2 — The Road',
-  tip: "The cars are faster now, and someone patrols the grassy median, so it isn't a safe rest any more. Use the hedge to hide and time your dashes, or smash the cars with your lightsaber (10 health, 2 damage a hit). Hold B to block a car head-on.",
+  tip: "Cars rumble down four lanes, and someone patrols the grassy median, so it isn't a safe rest any more. Use the hedge to hide and time your dashes, or smash the cars with your lightsaber (10 health, 2 damage a hit). Hold B to block a car head-on.",
   theme: 'road',
   difficulty: { speed: 1.1, vision: 1.05, fill: 0.9, decay: 0.7 },
   exitLabel: 'CROSS HERE',
@@ -638,10 +638,10 @@ const level2 = {
     { type:'human', look:'pedestrian', mode:'cone', pts:[{x:560,y:303},{x:900,y:303}], speed:80, visionRange:140, visionHalfAngle:35*DEG, fillTime:0.9, w:22, h:34 },
   ],
   vehicleDefs: makeLaneCars([
-    {y:195, dir:1, speed:140, offset:0},
-    {y:265, dir:-1, speed:110, offset:120},
-    {y:375, dir:1, speed:160, offset:240},
-    {y:445, dir:-1, speed:125, offset:40},
+    {y:195, dir:1, speed:105, offset:0},
+    {y:265, dir:-1, speed:82, offset:120},
+    {y:375, dir:1, speed:120, offset:240},
+    {y:445, dir:-1, speed:94, offset:40},
   ]),
   pickups: [{x:460, y:307, w:26, h:26, kind:'speed'}],
   friends: [{x:450,y:585},{x:200,y:312},{x:880,y:62}],
@@ -819,10 +819,10 @@ const level6 = {
     { type:'alien', look:'grey',  mode:'cone', pts:[{x:640,y:96},{x:920,y:96}], speed:95, visionRange:160, visionHalfAngle:38*DEG, fillTime:0.9, w:24, h:24 },
   ],
   vehicleDefs: makeAsteroids([
-    {y:158, dir:-1, speed:125, offset:60,  sizes:[44, 36, 50]},
-    {y:276, dir:1,  speed:150, offset:300, sizes:[38, 46, 34]},
-    {y:362, dir:-1, speed:105, offset:150, sizes:[50, 40, 44]},
-    {y:502, dir:1,  speed:135, offset:20,  sizes:[42, 52, 36]},
+    {y:158, dir:-1, speed:94,  offset:60,  sizes:[44, 36, 50]},
+    {y:276, dir:1,  speed:112, offset:300, sizes:[38, 46, 34]},
+    {y:362, dir:-1, speed:79,  offset:150, sizes:[50, 40, 44]},
+    {y:502, dir:1,  speed:101, offset:20,  sizes:[42, 52, 36]},
   ]),
   pickups: [{x:470, y:430, w:26, h:26, kind:'speed'}],
   friends: [{x:60,y:530},{x:300,y:212},{x:880,y:104}],
