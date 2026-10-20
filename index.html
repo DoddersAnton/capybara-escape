@@ -112,6 +112,14 @@
     cursor: pointer; font-size: 14px;
   }
   #muteBtn:hover { background: rgba(0,0,0,0.6); }
+  #pauseBtn {
+    pointer-events: auto; touch-action: manipulation; margin-bottom: 6px; background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(255,255,255,0.75); color: #fff; border-radius: 6px; padding: 3px 10px;
+    cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+  }
+  #pauseBtn:hover { background: rgba(0,0,0,0.65); }
+  #pauseBtn.hidden { display: none; }
+  .pause-hint { font-size: 12px; opacity: 0.8; }
   #babyCmd { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   #babyCmd.hidden { display: none; }
   #babyCmd button {
@@ -204,6 +212,7 @@
   <canvas id="game" width="960" height="640"></canvas>
   <div id="hud">
     <div>
+      <button id="pauseBtn" class="hidden" title="Pause and save your progress (P or Esc)">⏸ Pause</button>
       <div>Suspicion</div>
       <div id="suspicionBar"><div id="suspicionFill"></div></div>
       <div id="livesLabel">❤️❤️❤️</div>
@@ -234,6 +243,7 @@
     <h1>🐹 Ezra's Capybara Escape Game</h1>
     <div class="credit-line">Please play to start</div>
     <div class="rotate-hint">📱 Tip: turn your phone sideways for a bigger game</div>
+    <div id="continueInfo" class="credit-line hidden"></div>
     <p>Guide the capybara through six levels: sneak out of the <b>zoo</b>,
     dash across a busy <b>road</b>, cross a quiet <b>field</b>, climb a
     snowy <b>mountain</b>, duel <b>Darth Vader</b> for the escape pod, then dodge asteroids and alien patrols in <b>deep space</b>.
@@ -255,6 +265,7 @@
     Watch the meter in the top corner. Your baby capybaras only fight when you <b>command</b> them: press <b>F</b> (or the Attack button) to send them after the nearest
     person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
+    Press <b>P</b> or <b>Esc</b> (or the ⏸ button in the top corner) to <b>pause</b> — your progress is saved, and <b>Continue</b> on the title screen picks it up again.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
     follow-cam, or true first person through the capybara's own eyes (there,
     <b>←/→</b> or <b>A/D</b> turn you and <b>↑/↓</b> or <b>W/S</b> walk).
@@ -263,6 +274,7 @@
     You have <b>3 lives</b> — get caught
     three times and it's back to the start!</p>
     <div class="btn-row">
+      <button id="continueBtn" class="hidden">▶ Continue</button>
       <button id="startBtn">Start Escape</button>
       <button id="leaderboardBtn" class="secondary">🏆 Leaderboard</button>
     </div>
@@ -282,6 +294,16 @@
     <p id="introTip"></p>
     <p id="introFriends"></p>
     <button id="introContinueBtn">Continue</button>
+  </div>
+
+  <div id="pauseScreen" class="overlay hidden">
+    <h1>⏸ Paused</h1>
+    <p id="pauseInfo"></p>
+    <div class="btn-row">
+      <button id="resumeBtn">▶ Resume</button>
+      <button id="quitBtn" class="secondary">Save &amp; quit to title</button>
+    </div>
+    <p class="pause-hint">Press <b>P</b> or <b>Esc</b> to pause and resume.</p>
   </div>
 
   <div id="caughtScreen" class="overlay hidden">
@@ -854,6 +876,9 @@ window.addEventListener('keydown', e => {
   // Typing in the name box, or pressing Enter/Space on a focused overlay button, is handled by that control itself.
   if (t && (t.tagName === 'INPUT' || (t.tagName === 'BUTTON' && t.closest('.overlay')))) return;
   if (state === 'playing' && e.key.toLowerCase() === 'v' && !e.repeat) cycleView();
+  if ((e.key.toLowerCase() === 'p' || e.key === 'Escape') && !e.repeat) {
+    if (state === 'playing') pauseGame(); else if (state === 'paused') resumeGame();
+  }
   if (state === 'playing' && e.key.toLowerCase() === 'f' && !e.repeat) commandAttack();
   if (state === 'playing' && e.key.toLowerCase() === 'r' && !e.repeat) commandRetreat();
   if (state === 'playing' && e.key.toLowerCase() === 'm' && !e.repeat) { showMinimap = !showMinimap; try { localStorage.setItem('capybara_minimap', showMinimap ? '1' : '0'); } catch (err) {} }
@@ -865,6 +890,7 @@ window.addEventListener('keydown', e => {
     else if (state === 'levelIntro') { sfxClick(); continueFromIntro(); }
     else if (state === 'caught') { sfxClick(); retryLevel(); }
     else if (state === 'gameover') { sfxClick(); startOver(); }
+    else if (state === 'paused') { sfxClick(); resumeGame(); }
     if (!wasPlaying) keys[' '] = false;   // the Space that just closed a screen shouldn't also swing
   }
 });
@@ -1122,6 +1148,7 @@ function triggerCaught(msg) {
   updateLivesDisplay();
   if (lives <= 0) {
     state = 'gameover';
+    clearSave();
     document.getElementById('gameOverMsg').textContent = msg;
     document.getElementById('gameOverScreen').classList.remove('hidden');
   } else {
@@ -2151,6 +2178,7 @@ function checkWin() {
     } else {
       sfxWin();
       state = 'won';
+      clearSave();
       document.getElementById('winTime').textContent = elapsed.toFixed(1);
       const total = friendsTotal();
       document.getElementById('winFriends').textContent = friendsFound.size >= total
@@ -5870,6 +5898,7 @@ function drawScene() {
 
 function updateHud(seenNow) {
   updateBabyCmdUI();
+  document.getElementById('pauseBtn').classList.toggle('hidden', state !== 'playing');
   const guardFill = document.getElementById('guardFill');
   guardFill.style.width = (player.guard / GUARD_MAX * 100).toFixed(0) + '%';
   guardFill.style.background = player.guardBroken > 0 ? '#8a94a0' : (player.guard < GUARD_MAX * 0.25 ? '#ff8a33' : '#4fd1ff');
@@ -6103,6 +6132,99 @@ function hideLeaderboard() {
   state = 'credits';
 }
 
+/* ---------- Pause and save ---------- */
+// Pausing (the ⏸ button, P or Esc) freezes everything and writes the whole run to localStorage: which level you're
+// on, your lives, time, health and guard, every baby capybara you've found or that escaped, where everyone and
+// everything is standing, and Vader's health. The title screen then offers Continue to pick up exactly there, even
+// after closing the page. A finished run (won, or out of lives) clears the save.
+const SAVE_KEY = 'capybara_save_v1';
+
+function snapshotGame() {
+  const pick = (o, keys) => { const r = {}; keys.forEach(k => { r[k] = o[k]; }); return r; };
+  return {
+    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives,
+    found: [...friendsFound], escapes: [...friendEscapes], spots: friendSpots, babyMode,
+    player: pick(player, ['x', 'y', 'facing', 'hp', 'guard', 'guardBroken', 'speedBoostT']),
+    hazards: hazards.map(h => pick(h, ['x', 'y', 'angle', 'hp', 'dead', 'deadT', 'wmode', 'wt', 'wang', 'idx', 'forward'])),
+    vehicles: vehicles.map(v => pick(v, ['x', 'hp', 'dead', 'stun'])),
+    pickups: pickups.map(p => pick(p, ['collected', 'respawnT'])),
+    friends: friends.map(f => pick(f, ['id', 'x', 'y'])),
+    boss: boss ? pick(boss, ['x', 'y', 'hp', 'state', 't', 'aim', 'lockAim', 'enraged', 'woundT', 'dead', 'regenDelay', 'regenAcc', 'wmode', 'wt', 'wang']) : null,
+    bossDefeated,
+  };
+}
+function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(snapshotGame())); return true; } catch (e) { return false; } }
+function readSave() {
+  try {
+    const sv = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    return sv && sv.v === 1 && levels[sv.level] ? sv : null;
+  } catch (e) { return null; }
+}
+function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} updateContinueUI(); }
+
+function saveSummary(sv) {
+  const secs = Math.round(sv.elapsed), t = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+  return levels[sv.level].name + ' · 🐹 ' + sv.found.length + '/' + friendsTotal() + ' · ❤️ ' + sv.lives + ' · ' + t;
+}
+
+function restoreGame(sv) {
+  elapsed = sv.elapsed; lives = sv.lives; updateLivesDisplay();
+  friendsFound.clear(); sv.found.forEach(id => friendsFound.add(id));
+  friendEscapes.clear(); sv.escapes.forEach(([id, e]) => friendEscapes.set(id, e));
+  if (Array.isArray(sv.spots) && sv.spots.length === levels.length) friendSpots = sv.spots;
+  loadLevel(sv.level);
+  Object.assign(player, sv.player); player.suspicion = 0;
+  if (sv.hazards.length === hazards.length) hazards.forEach((h, i) => Object.assign(h, sv.hazards[i]));
+  if (sv.vehicles.length === vehicles.length) vehicles.forEach((v, i) => Object.assign(v, sv.vehicles[i]));
+  if (sv.pickups.length === pickups.length) pickups.forEach((p, i) => Object.assign(p, sv.pickups[i]));
+  sv.friends.forEach(sf => { const f = friends.find(x => x.id === sf.id); if (f) { f.x = sf.x; f.y = sf.y; } });
+  if (boss && sv.boss) Object.assign(boss, sv.boss);
+  bossDefeated = !!sv.bossDefeated;
+  if (bossDefeated) obstacles = obstacles.filter(o => !o.barrier);                       // the gate stays unsealed
+  resetTrail();                                                                          // the babies you'd collected gather round where you stand
+  babyMode = sv.babyMode === 'attack' ? 'attack' : 'follow';
+  lastBabyCmd = '';
+}
+
+function pauseGame() {
+  if (state !== 'playing') return;
+  const saved = writeSave();
+  state = 'paused';
+  document.getElementById('pauseInfo').textContent = saved
+    ? 'Your progress is saved — ' + saveSummary(snapshotGame()) + '. Use Continue on the title screen any time to pick up here.'
+    : "The game is paused, but your browser wouldn't let me save your progress (is storage blocked?).";
+  document.getElementById('pauseScreen').classList.remove('hidden');
+  sfxClick();
+  if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
+  updateContinueUI();
+}
+function resumeGame() {
+  if (state !== 'paused') return;
+  document.getElementById('pauseScreen').classList.add('hidden');
+  state = 'playing';
+  ensureAudio();
+}
+function quitToTitle() {
+  document.getElementById('pauseScreen').classList.add('hidden');
+  document.getElementById('creditsScreen').classList.remove('hidden');
+  state = 'credits';
+  updateContinueUI();
+}
+function continueGame() {
+  const sv = readSave();
+  if (!sv) { updateContinueUI(); return; }
+  document.getElementById('creditsScreen').classList.add('hidden');
+  restoreGame(sv);
+  state = 'playing';
+}
+function updateContinueUI() {
+  const sv = readSave();
+  document.getElementById('continueBtn').classList.toggle('hidden', !sv);
+  const info = document.getElementById('continueInfo');
+  info.classList.toggle('hidden', !sv);
+  info.textContent = sv ? 'Saved game: ' + saveSummary(sv) : '';
+}
+
 /* ---------- UI wiring ---------- */
 
 detectSharedStore();                       // find out early whether there's a leaderboard server, so the board opens quickly
@@ -6113,6 +6235,11 @@ document.getElementById('nameInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); ensureAudio(); sfxClick(); submitScore(); }
 });
 document.getElementById('startBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); startGame(); });
+document.getElementById('continueBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); continueGame(); });
+document.getElementById('pauseBtn').addEventListener('pointerdown', e => { e.preventDefault(); ensureAudio(); pauseGame(); document.getElementById('pauseBtn').blur(); });
+document.getElementById('resumeBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); resumeGame(); });
+document.getElementById('quitBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); quitToTitle(); });
+updateContinueUI();
 document.getElementById('introContinueBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); continueFromIntro(); });
 document.getElementById('retryBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); retryLevel(); });
 document.getElementById('startOverBtn').addEventListener('click', () => { ensureAudio(); sfxClick(); startOver(); });
@@ -6121,6 +6248,7 @@ document.getElementById('playAgainBtn').addEventListener('click', () => {
   document.getElementById('winScreen').classList.add('hidden');
   document.getElementById('creditsScreen').classList.remove('hidden');
   state = 'credits';
+  updateContinueUI();
 });
 document.getElementById('muteBtn').addEventListener('click', () => { ensureAudio(); setMuted(!muted); });
 document.getElementById('muteBtn').textContent = muted ? '🔇' : '🔊';
