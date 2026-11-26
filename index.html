@@ -131,6 +131,13 @@
   #lyreBtn.active { background: rgba(150,200,255,0.9); color: #0c2147; text-shadow: none; }
   #lyreBtn.waiting { opacity: 0.6; cursor: default; }
   #lyreRow.hidden, #lyreBtn.hidden { display: none; }
+  #stretchBtn {
+    display: block; margin: 6px 0 0 auto; pointer-events: auto; touch-action: manipulation; background: rgba(90,60,0,0.7);
+    border: 1px solid #ffd34d; color: #fff; border-radius: 6px; padding: 4px 9px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+  }
+  #stretchBtn.active { background: rgba(255,204,51,0.92); color: #2a1f05; text-shadow: none; }
+  #stretchBtn.waiting { opacity: 0.6; cursor: default; }
+  #stretchBtn.hidden { display: none; }
   #babyCmd { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   #babyCmd.hidden { display: none; }
   #babyCmd button {
@@ -247,6 +254,7 @@
         <button id="atkBtn" title="Send your baby capybaras to attack (F)">⚔ Attack <kbd>F</kbd></button>
         <button id="retBtn" title="Call your baby capybaras back to you (R)">↩ Retreat <kbd>R</kbd></button>
       </div>
+      <button id="stretchBtn" class="hidden" title="Stretch the legendary blade for 2 seconds (Q)">🗡 Extend blade (Q)</button>
       <div id="lyreRow" class="hidden"></div>
       <button id="lyreBtn" class="hidden" title="Play the lyre to calm baby capybaras and reindeer (L)">🎵 Play lyre (L)</button>
       <button id="muteBtn" title="Toggle sound">🔊</button>
@@ -279,7 +287,7 @@
     Watch the meter in the top corner. Your baby capybaras only fight when you <b>command</b> them: press <b>F</b> (or the Attack button) to send them after the nearest
     person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
-    Rescue <b>every baby capybara</b> on a level before you leave and the next one gives you the <b>legendary sword</b> — double damage and a longer reach.
+    Rescue <b>every baby capybara</b> on a level before you leave and the next one gives you the <b>legendary sword</b> — double damage, and <b>Q</b> stretches its blade for 2 seconds to reach further (then it recharges).
     Rescue every baby on the <b>Field</b> to win a <b>lyre</b> 🎵 — press <b>L</b> to play it and calm the baby capybaras and reindeer for a few seconds.
     Press <b>P</b> or <b>Esc</b> (or the ⏸ button in the top corner) to <b>pause</b> — your progress is saved, and <b>Continue</b> on the title screen picks it up again.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
@@ -897,6 +905,7 @@ window.addEventListener('keydown', e => {
     if (state === 'playing') pauseGame(); else if (state === 'paused') resumeGame();
   }
   if (state === 'playing' && e.key.toLowerCase() === 'l' && !e.repeat) playLyre();
+  if (state === 'playing' && e.key.toLowerCase() === 'q' && !e.repeat) stretchBlade();
   if (state === 'playing' && e.key.toLowerCase() === 'f' && !e.repeat) commandAttack();
   if (state === 'playing' && e.key.toLowerCase() === 'r' && !e.repeat) commandRetreat();
   if (state === 'playing' && e.key.toLowerCase() === 'm' && !e.repeat) { showMinimap = !showMinimap; try { localStorage.setItem('capybara_minimap', showMinimap ? '1' : '0'); } catch (err) {} }
@@ -1000,10 +1009,41 @@ const SABER_TARGETS = { human: { hp: 6, damage: 1 }, reindeer: { hp: 4, damage: 
 const SABER_REACH = 54;                 // px from the capybara's centre to the person's centre
 // Leave a level having rescued every baby capybara in it and you carry the legendary sword through the next one.
 const LEGEND_DAMAGE = 2;                // it hits this many times as hard...
-const LEGEND_REACH = 40;                // ...and this much further: out past Vader's own reach (VADER_REACH), so you can hit him safely
-const LEGEND_BLADE = 86;                // how long its blade is drawn, so the tip reaches as far as it hits
+const LEGEND_REACH = 24;                // ...and while stretched (press Q) this much further: past Vader's own reach (VADER_REACH)
+const LEGEND_BLADE = 62;                // how long the stretched blade is drawn, so the tip reaches as far as it hits
+const LEGEND_STRETCH_TIME = 2;          // seconds the blade stays long...
+const LEGEND_STRETCH_RECHARGE = 5;      // ...then this long before it can stretch again
+let stretchT = 0, stretchCd = 0;
 function saberPower() { return player.legendary ? LEGEND_DAMAGE : 1; }
-function saberExtraReach() { return player.legendary ? LEGEND_REACH : 0; }
+function bladeStretched() { return player.legendary && stretchT > 0; }
+function saberExtraReach() { return bladeStretched() ? LEGEND_REACH : 0; }
+// 0 to 1: how far out the blade is drawn, shooting out quickly and drawing back as the time runs out.
+function stretchAmount() { return bladeStretched() ? Math.max(0, Math.min(1, (LEGEND_STRETCH_TIME - stretchT) / 0.12 + 0.15, stretchT / 0.15)) : 0; }
+function stretchedLength(normal, long) { return normal + (long - normal) * stretchAmount(); }
+function stretchBlade() {
+  if (state !== 'playing' || !player.legendary || stretchT > 0 || stretchCd > 0) return;
+  stretchT = LEGEND_STRETCH_TIME;
+  const pc = center(player);
+  floaters.push({ x: pc.x, y: player.y - 22, t: 0, text: 'BLADE EXTENDED!', tone: 'green' });
+  sfxSaberSwing();
+}
+function updateStretch(dt) {
+  if (stretchT > 0) {
+    stretchT -= dt;
+    if (stretchT <= 0) { stretchT = 0; stretchCd = LEGEND_STRETCH_RECHARGE; }
+  } else if (stretchCd > 0) stretchCd = Math.max(0, stretchCd - dt);
+}
+let lastStretchUi = '';
+function updateStretchUI() {
+  const btn = document.getElementById('stretchBtn'), show = !!player.legendary && state === 'playing';
+  const label = stretchT > 0 ? '🗡 Extended ' + stretchT.toFixed(1) + 's' : stretchCd > 0 ? '🗡 Recharging ' + Math.ceil(stretchCd) + 's' : '🗡 Extend blade (Q)';
+  if (show + label === lastStretchUi) return;
+  lastStretchUi = show + label;
+  btn.classList.toggle('hidden', !show);
+  btn.classList.toggle('active', stretchT > 0);
+  btn.classList.toggle('waiting', stretchT <= 0 && stretchCd > 0);
+  btn.textContent = label;
+}
 // Every baby that belongs to a level: the ones that started there, plus any that escaped into it from the one before.
 // One that slips out of the exit before you catch it counts against the level it left.
 function levelBabyIds(idx) {
@@ -1087,6 +1127,7 @@ function loadLevel(idx, keepBoost = false) {
   currentLevelIndex = idx;
   player.legendary = false;
   resetLyreTimers();
+  stretchT = 0; stretchCd = 0;
   currentLevel = levels[idx];
   obstacles = currentLevel.obstacles;
   bushes = currentLevel.bushes;
@@ -1152,7 +1193,7 @@ function showLevelIntro(idx, earnedSword = false) {    // earnedSword: every bab
   const sword = document.getElementById('introSword');
   sword.classList.toggle('hidden', !player.legendary);
   if (player.legendary) {
-    sword.textContent = '⚔ LEGENDARY SWORD! You rescued every baby capybara on the last level. On this level your saber does double damage and reaches further.';
+    sword.textContent = '⚔ LEGENDARY SWORD! You rescued every baby capybara on the last level. On this level your saber does double damage, and Q stretches the blade for 2 seconds.';
     sfxAllFriends();
   }
   document.getElementById('introTitle').textContent = currentLevel.name;
@@ -3926,7 +3967,7 @@ function drawGuardStance(p) {
   ctx.beginPath(); ctx.moveTo(8, 0); ctx.arc(8, 0, 36, -BLOCK_ARC, BLOCK_ARC); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = 'rgba(170,238,255,' + (0.6 + 0.3 * pulse).toFixed(2) + ')'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(8, 0, 36, -BLOCK_ARC, BLOCK_ARC); ctx.stroke();
-  drawBlade(31, 15, -Math.PI / 2 + 0.08, p.legendary ? 46 : 30, 12);
+  drawBlade(31, 15, -Math.PI / 2 + 0.08, stretchedLength(30, 40), 12);
   ctx.restore();
 }
 
@@ -3943,14 +3984,14 @@ function drawSaber(p) {
     const trail = Math.min(spinRotation(p), 3.6), tip = 0.44;
     ctx.save();
     ctx.strokeStyle = p.legendary ? 'rgba(255,196,40,0.5)' : 'rgba(79,209,255,0.4)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, 0, p.legendary ? LEGEND_BLADE + 6 : 32, tip - trail, tip); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, stretchedLength(32, LEGEND_BLADE + 6), tip - trail, tip); ctx.stroke();
     ctx.restore();
   }
   const swinging = p.swingT >= 0;
   const u = swinging ? Math.min(1, p.swingT / SWING_TIME) : 0;
   const start = 0.95, end = -1.25;
   const ang = swinging ? start + (end - start) * (1 - (1 - u) * (1 - u)) : 0.2;
-  const px = 5, py = 9.5, len = p.legendary ? LEGEND_BLADE : 27;
+  const px = 5, py = 9.5, len = stretchedLength(27, LEGEND_BLADE);
 
   if (swinging) {
     ctx.fillStyle = p.legendary ? 'rgba(255,196,40,0.32)' : 'rgba(79,209,255,0.24)';
@@ -5720,7 +5761,7 @@ function drawFpSnout() {
   ctx.beginPath(); ctx.ellipse(cx + 12, cy - 33, 6, 3.2, 0.2, 0, Math.PI * 2); ctx.fill();
 }
 function drawFpSaber() {
-  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, legend = !!player.legendary, L = legend ? 560 : 400;
+  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, legend = !!player.legendary, L = stretchedLength(400, 520);
   let bx = W * 0.83, by = H + 40 + bob, th = -0.3, glow = 1;
   if (player.blocking) { bx = W * 0.56; by = H + 40; th = -0.05; glow = 1.3 + 0.3 * Math.sin(animTime * 30); }
   else if (player.swingT >= 0) {                                                       // sweeps right to left across the view
@@ -5985,6 +6026,7 @@ function updateLegendHud() {
 }
 
 function updateHud(seenNow) {
+  updateStretchUI();
   updateLyreUI();
   updateBabyCmdUI();
   document.getElementById('pauseBtn').classList.toggle('hidden', state !== 'playing');
@@ -6016,6 +6058,7 @@ function loop(now) {
     elapsed += dt;
     updatePlayer(dt);
     updateLyre(dt);
+    updateStretch(dt);
     updateHazards(dt);
     updateBoss(dt);
     updateEffects(dt);
@@ -6340,7 +6383,7 @@ const SAVE_KEY = 'capybara_save_v1';
 function snapshotGame() {
   const pick = (o, keys) => { const r = {}; keys.forEach(k => { r[k] = o[k]; }); return r; };
   return {
-    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, legendary: !!player.legendary, hasLyre, lyreCalmT, lyreCd,
+    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, legendary: !!player.legendary, hasLyre, lyreCalmT, lyreCd, stretchT, stretchCd,
     found: [...friendsFound], escapes: [...friendEscapes], spots: friendSpots, babyMode,
     player: pick(player, ['x', 'y', 'facing', 'hp', 'guard', 'guardBroken', 'speedBoostT']),
     hazards: hazards.map(h => pick(h, ['x', 'y', 'angle', 'hp', 'dead', 'deadT', 'wmode', 'wt', 'wang', 'idx', 'forward'])),
@@ -6374,6 +6417,7 @@ function restoreGame(sv) {
   Object.assign(player, sv.player); player.suspicion = 0;
   player.legendary = !!sv.legendary;
   hasLyre = !!sv.hasLyre; lyreCalmT = sv.lyreCalmT || 0; lyreCd = sv.lyreCd || 0; lastLyreUi = '';
+  stretchT = sv.stretchT || 0; stretchCd = sv.stretchCd || 0; lastStretchUi = '';
   if (sv.hazards.length === hazards.length) hazards.forEach((h, i) => Object.assign(h, sv.hazards[i]));
   if (sv.vehicles.length === vehicles.length) vehicles.forEach((v, i) => Object.assign(v, sv.vehicles[i]));
   if (sv.pickups.length === pickups.length) pickups.forEach((p, i) => Object.assign(p, sv.pickups[i]));
@@ -6534,7 +6578,7 @@ touchControls.querySelectorAll('.tc-btn').forEach(btn => {
   const release = () => { pressTouchKey(key, false); btn.classList.remove('down'); };
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, release));
 });
-[['atkBtn', commandAttack], ['retBtn', commandRetreat], ['lyreBtn', playLyre]].forEach(([id, fn]) => {      // the on-screen command buttons (mouse or touch)
+[['atkBtn', commandAttack], ['retBtn', commandRetreat], ['lyreBtn', playLyre], ['stretchBtn', stretchBlade]].forEach(([id, fn]) => {      // the on-screen command buttons (mouse or touch)
   const btn = document.getElementById(id);
   btn.addEventListener('pointerdown', e => { e.preventDefault(); ensureAudio(); fn(); btn.blur(); });
 });
