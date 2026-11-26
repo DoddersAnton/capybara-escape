@@ -256,7 +256,7 @@
       </div>
       <button id="stretchBtn" class="hidden" title="Stretch the legendary blade for 2 seconds (Q)">🗡 Extend blade (Q)</button>
       <div id="lyreRow" class="hidden"></div>
-      <button id="lyreBtn" class="hidden" title="Play the lyre to calm baby capybaras and reindeer (L)">🎵 Play lyre (L)</button>
+      <button id="lyreBtn" class="hidden" title="Play the lyre to calm everything around you (L)">🎵 Play lyre (L)</button>
       <button id="muteBtn" title="Toggle sound">🔊</button>
     </div>
   </div>
@@ -288,7 +288,7 @@
     person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
     Rescue <b>every baby capybara</b> on a level before you leave and the next one gives you the <b>legendary sword</b> — double damage, and <b>Q</b> stretches its blade for 2 seconds to reach further (then it recharges).
-    Rescue every baby on the <b>Field</b> to win a <b>lyre</b> 🎵 — press <b>L</b> to play it and calm the baby capybaras and reindeer for a few seconds.
+    Rescue every baby on the <b>Field</b> to win a <b>lyre</b> 🎵 — press <b>L</b> to play it and calm <b>everything</b> for a few seconds: enemies and Darth Vader stand still, cars and asteroids stop, and baby capybaras stop running.
     Press <b>P</b> or <b>Esc</b> (or the ⏸ button in the top corner) to <b>pause</b> — your progress is saved, and <b>Continue</b> on the title screen picks it up again.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
     follow-cam, or true first person through the capybara's own eyes (there,
@@ -1472,6 +1472,8 @@ function updateBoss(dt) {
   b.breathT -= dt;
   if (b.breathT <= 0) { sfxVaderBreath(); b.breathT = 2.4; }
 
+  if (lyreCalmT > 0) return;                                // calmed by the lyre: stands still, saber lowered
+
   // between swings, and once he's out of your reach, he'll pace a little around where he's standing —
   // never toward you, so he still never actually gives chase.
   if (b.state === 'guard' && dist > VADER_REACH) updateWander(b, b.woundT > 0 ? dt * VADER_WOUND_SLOW : dt);
@@ -2191,13 +2193,15 @@ function updateVehicles(dt) {
     if (v.hitFlash > 0) v.hitFlash = Math.max(0, v.hitFlash - dt);
     if (v.dead) return;
     if (v.stun > 0) v.stun = Math.max(0, v.stun - dt);
+    if (lyreCalmT > 0) return;                              // soothed to a standstill
     v.x += v.dir * v.speed * (v.stun > 0 ? 0.15 : 1) * dt;
     if (v.dir > 0 && v.x > W) v.x = -v.w;
     if (v.dir < 0 && v.x < -v.w) v.x = W;
   });
   let runOver = null;
   vehicles.forEach(v => {
-    if (v.dead || !rectsOverlap(player, v)) return;
+    if (v.harmless && !rectsOverlap(player, v)) v.harmless = false;
+    if (v.dead || lyreCalmT > 0 || v.harmless || !rectsOverlap(player, v)) return;
     if (canBlockCar(v)) deflectCar(v);
     else runOver = v;
   });
@@ -5443,7 +5447,6 @@ function fpReindeer(p, h, yaw) {
   fpBlit(p, fpReindeerSprite(vw.v, walking ? fpFrame(1.3, (h.pts[0].x % 7) / 7) : -1), vw.flip);
   fpHitFlash(p, h, 28, 14, 28);
   if (h.alert) fpAlertMark(p, 64);
-  if (isCalmed(h)) drawNote(p.sx + 14 * p.s, p.by - (62 + Math.sin(animTime * 3) * 3) * p.sv, Math.max(14, Math.min(40, 18 * p.s)), 1);
 }
 
 /* Baby capybaras */
@@ -5697,6 +5700,8 @@ function fpAsteroid(p, v) {                                                     
   if (v.hitFlash > 0) fpOval({ sx: p.sx, by: p.by - lift * p.sv, s: p.s, sv: p.sv }, 0, size * 0.5, size * 0.5, size * 0.5, 'rgba(255,255,255,' + (0.6 * v.hitFlash / 0.15).toFixed(2) + ')');
 }
 
+function fpNote(p, height) { drawNote(p.sx + 14 * p.s, p.by - (height + Math.sin(animTime * 3) * 3) * p.sv, Math.max(14, Math.min(40, 18 * p.s)), 1); }
+const FP_NOTE_HEIGHT = { human: 50, dog: 30, cow: 40, reindeer: 62, alien: 54 };
 function fpHazard(p, h, yaw) {
   if (h.dead) { ctx.globalAlpha *= Math.max(0, 1 - h.deadT / DEFEAT_FADE); p.sv *= Math.max(0.15, 1 - h.deadT / 0.25); }
   else h.alert = canDetect(h);
@@ -5705,6 +5710,7 @@ function fpHazard(p, h, yaw) {
   else if (h.type === 'cow') fpCow(p, h, yaw);
   else if (h.type === 'reindeer') fpReindeer(p, h, yaw);
   else if (h.type === 'alien') fpAlien(p, h, yaw);
+  if (isCalmed(h)) fpNote(p, FP_NOTE_HEIGHT[h.type] || 40);
 }
 function fpPickup(p, pk) {
   const bob = Math.sin(animTime * 3 + pk.x) * 2, cy = p.by - (16 + bob) * p.sv;
@@ -5729,8 +5735,8 @@ function fpSprites(ex, ey, yaw, items) {
     add(f.x, f.y, p => fpBaby(p, f, f.face, moving, yaw));
   });
   hazards.forEach(h => { if (!(h.dead && h.deadT >= DEFEAT_FADE)) add(h.x + h.w / 2, h.y + h.h / 2, p => fpHazard(p, h, yaw)); });
-  vehicles.forEach(v => { if (!v.dead) add(v.x + v.w / 2, v.y + v.h / 2, p => fpCar(p, v, ex, ey, yaw)); });
-  if (boss && !(boss.dead && boss.deadT > 1.4)) add(boss.x + boss.w / 2, boss.y + boss.h / 2, p => fpVader(p, boss, yaw));
+  vehicles.forEach(v => { if (!v.dead) add(v.x + v.w / 2, v.y + v.h / 2, p => { fpCar(p, v, ex, ey, yaw); if (lyreCalmT > 0) fpNote(p, v.kind === 'asteroid' ? v.w : 34); }); });
+  if (boss && !(boss.dead && boss.deadT > 1.4)) add(boss.x + boss.w / 2, boss.y + boss.h / 2, p => { fpVader(p, boss, yaw); if (lyreCalmT > 0 && !boss.dead) fpNote(p, 70); });
 }
 
 function drawFpFloaters(ex, ey, yaw) {
@@ -6001,9 +6007,11 @@ function drawScene() {
   friends.forEach(drawFriend);
   drawFollowers();
   vehicles.forEach(drawVehicle);
+  if (lyreCalmT > 0) vehicles.forEach(v => { if (!v.dead) drawNote(v.x + v.w / 2, v.y + Math.sin(animTime * 3 + v.x) * 3, 17, 1); });
   drawDebris();
   hazards.forEach(drawHazard);
   if (boss) { drawVaderTelegraph(boss); drawVader(boss); }
+  if (boss && !boss.dead && lyreCalmT > 0) drawNote(boss.x + boss.w / 2 + 18, boss.y - 2 + Math.sin(animTime * 3) * 3, 22, 1);
   drawCapybara(player);
   if (lyreCalmT > 0) drawLyrePlaying();
   drawFloaters();
@@ -6268,14 +6276,15 @@ function hideLeaderboard() {
 
 /* ---------- The lyre ---------- */
 // Rescue every baby capybara on the Field and you're given a lyre, which you keep for the rest of the run. Play it
-// (L, or the button) and for a few seconds the music calms things down: loose baby capybaras stop running from you,
-// and reindeer stop where they are and take no notice of you. Then it needs a moment before it can be played again.
+// (L, or the button) and for a few seconds the music calms everything: people, dogs, cows, reindeer and aliens stop
+// where they are and take no notice of you, Darth Vader lowers his saber, cars and asteroids come to a gentle stop
+// (and can't hurt you), and loose baby capybaras stop running away. Then it needs a moment before the next tune.
 const LYRE_LEVEL = 2;                   // the Field
 const LYRE_CALM_TIME = 8;               // seconds each tune keeps them calm
 const LYRE_RECHARGE = 12;               // seconds after that before you can play again
 let hasLyre = false, lyreCalmT = 0, lyreCd = 0;
 
-function isCalmed(h) { return lyreCalmT > 0 && h.type === 'reindeer' && !h.dead; }
+function isCalmed(h) { return lyreCalmT > 0 && !h.dead; }           // anyone and anything still standing
 function resetLyreTimers() { lyreCalmT = 0; lyreCd = 0; }
 
 function checkLyre() {                                      // called whenever a baby is rescued
@@ -6291,7 +6300,8 @@ function checkLyre() {                                      // called whenever a
 function playLyre() {
   if (!hasLyre || state !== 'playing' || lyreCalmT > 0 || lyreCd > 0) return;
   lyreCalmT = LYRE_CALM_TIME;
-  hazards.forEach(h => { if (h.type === 'reindeer') { h.wasSpotting = false; h.alert = false; } });
+  hazards.forEach(h => { h.wasSpotting = false; h.alert = false; });
+  if (boss && !boss.dead && boss.state !== 'wait') { boss.state = 'guard'; boss.t = 0; }       // a swing he was winding up is dropped
   friends.forEach(f => { if (f.mode === 'flee') { f.mode = 'pause'; f.t = 0.5; } });
   const pc = center(player);
   floaters.push({ x: pc.x, y: player.y - 26, t: 0, text: '♪ CALM ♪', tone: 'green' });
@@ -6300,7 +6310,10 @@ function playLyre() {
 function updateLyre(dt) {
   if (lyreCalmT > 0) {
     lyreCalmT -= dt;
-    if (lyreCalmT <= 0) { lyreCalmT = 0; lyreCd = LYRE_RECHARGE; }
+    if (lyreCalmT <= 0) {
+      lyreCalmT = 0; lyreCd = LYRE_RECHARGE;
+      vehicles.forEach(v => { v.harmless = !v.dead && rectsOverlap(player, v); });
+    }
   } else if (lyreCd > 0) lyreCd = Math.max(0, lyreCd - dt);
 }
 function sfxLyre() {                                        // a soft rising and falling arpeggio, like plucked strings
