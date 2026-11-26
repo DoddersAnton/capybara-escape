@@ -123,6 +123,14 @@
   #legendRow { color: #ffd34d; font-weight: 700; font-size: 13px; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
   #legendRow.hidden, #introSword.hidden { display: none; }
   #introSword { color: #ffd34d; font-weight: 700; }
+  #lyreRow { color: #cfe8ff; font-weight: 700; font-size: 13px; margin-top: 3px; }
+  #lyreBtn {
+    display: block; margin: 6px 0 0 auto; pointer-events: auto; touch-action: manipulation; background: rgba(20,40,80,0.65);
+    border: 1px solid #cfe8ff; color: #fff; border-radius: 6px; padding: 4px 9px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit;
+  }
+  #lyreBtn.active { background: rgba(150,200,255,0.9); color: #0c2147; text-shadow: none; }
+  #lyreBtn.waiting { opacity: 0.6; cursor: default; }
+  #lyreRow.hidden, #lyreBtn.hidden { display: none; }
   #babyCmd { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   #babyCmd.hidden { display: none; }
   #babyCmd button {
@@ -239,6 +247,8 @@
         <button id="atkBtn" title="Send your baby capybaras to attack (F)">⚔ Attack <kbd>F</kbd></button>
         <button id="retBtn" title="Call your baby capybaras back to you (R)">↩ Retreat <kbd>R</kbd></button>
       </div>
+      <div id="lyreRow" class="hidden"></div>
+      <button id="lyreBtn" class="hidden" title="Play the lyre to calm baby capybaras and reindeer (L)">🎵 Play lyre (L)</button>
       <button id="muteBtn" title="Toggle sound">🔊</button>
     </div>
   </div>
@@ -270,6 +280,7 @@
     person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
     Rescue <b>every baby capybara</b> on a level before you leave and the next one gives you the <b>legendary sword</b> — double damage and a longer reach.
+    Rescue every baby on the <b>Field</b> to win a <b>lyre</b> 🎵 — press <b>L</b> to play it and calm the baby capybaras and reindeer for a few seconds.
     Press <b>P</b> or <b>Esc</b> (or the ⏸ button in the top corner) to <b>pause</b> — your progress is saved, and <b>Continue</b> on the title screen picks it up again.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
     follow-cam, or true first person through the capybara's own eyes (there,
@@ -681,7 +692,7 @@ const level2 = {
 
 const level3 = {
   name: 'Level 3 — The Field',
-  tip: 'Stay low in the tall grass to avoid hikers, dogs, and skittish cows. A dog now guards the trail entrance, so pick your moment.',
+  tip: 'Stay low in the tall grass to avoid hikers, dogs, and skittish cows. A dog now guards the trail entrance, so pick your moment. Rescue every baby capybara here to win a lyre.',
   theme: 'field',
   difficulty: { speed: 1.1, vision: 1, fill: 1, decay: 0.75 },
   exitLabel: 'UP THE TRAIL',
@@ -885,6 +896,7 @@ window.addEventListener('keydown', e => {
   if ((e.key.toLowerCase() === 'p' || e.key === 'Escape') && !e.repeat) {
     if (state === 'playing') pauseGame(); else if (state === 'paused') resumeGame();
   }
+  if (state === 'playing' && e.key.toLowerCase() === 'l' && !e.repeat) playLyre();
   if (state === 'playing' && e.key.toLowerCase() === 'f' && !e.repeat) commandAttack();
   if (state === 'playing' && e.key.toLowerCase() === 'r' && !e.repeat) commandRetreat();
   if (state === 'playing' && e.key.toLowerCase() === 'm' && !e.repeat) { showMinimap = !showMinimap; try { localStorage.setItem('capybara_minimap', showMinimap ? '1' : '0'); } catch (err) {} }
@@ -1073,6 +1085,7 @@ function instantiateVehicles(defs, diff) {
 function loadLevel(idx, keepBoost = false) {
   currentLevelIndex = idx;
   player.legendary = false;
+  resetLyreTimers();
   currentLevel = levels[idx];
   obstacles = currentLevel.obstacles;
   bushes = currentLevel.bushes;
@@ -1124,6 +1137,7 @@ function startGame() {
   elapsed = 0;
   friendsFound.clear();
   friendEscapes.clear();
+  hasLyre = false;
   rollFriendSpots();
   lives = MAX_LIVES;
   updateLivesDisplay();
@@ -1189,6 +1203,7 @@ function startOver() {
   elapsed = 0;
   friendsFound.clear();
   friendEscapes.clear();
+  hasLyre = false;
   rollFriendSpots();
   lives = MAX_LIVES;
   updateLivesDisplay();
@@ -1633,12 +1648,14 @@ function friendSolids(level, gateOpen) {
 function updateFriendAI(f, dt) {
   const pc = center(player), fc = center(f);
   const dist = Math.hypot(fc.x - pc.x, fc.y - pc.y);
-  if (dist < FRIEND_NOTICE) f.mode = 'flee';
+  if (lyreCalmT > 0) { if (f.mode === 'flee' || f.mode === undefined) { f.mode = 'pause'; f.t = 0.5; } }   // the lyre: no running away
+  else if (dist < FRIEND_NOTICE) f.mode = 'flee';
   else if (f.mode === 'flee' && dist > FRIEND_NOTICE_EXIT) { f.mode = 'pause'; f.t = 0; }
   else if (f.mode === undefined) { f.mode = 'pause'; f.t = Math.random(); }
 
   let vx = 0, vy = 0;
-  if (f.mode === 'flee') {
+  if (lyreCalmT > 0) f.mode = 'pause';                      // sits still to listen
+  else if (f.mode === 'flee') {
     f.wobble = (f.wobble || 0) + dt * 3.2;
     const ang = Math.atan2(fc.y - pc.y, fc.x - pc.x) + Math.sin(f.wobble) * 0.55;
     vx = Math.cos(ang) * FRIEND_FLEE_SPEED; vy = Math.sin(ang) * FRIEND_FLEE_SPEED;
@@ -1788,6 +1805,7 @@ function updateFriends(dt) {
     }
     all ? sfxAllFriends() : sfxFriend();
     updateFriendsHud(true);
+    checkLyre();
   }
 }
 
@@ -2083,7 +2101,8 @@ function drawFriend(f) {
 
   const beat = 1 + 0.18 * Math.sin(t * 4);                                          // a little heart floats above
   ctx.fillStyle = 'rgba(255,90,150,0.95)';
-  drawHeart(cx, cy - 20 - hop + Math.sin(t * 2) * 1.6, 3.6 * beat);
+  if (lyreCalmT > 0) drawNote(cx, cy - 16 + Math.sin(t * 3) * 2, 17, 1);          // listening contentedly
+  else drawHeart(cx, cy - 20 - hop + Math.sin(t * 2) * 1.6, 3.6 * beat);
   ctx.restore();
 }
 
@@ -2098,6 +2117,7 @@ function updateHazards(dt) {
       if (spotted && !h.wasSpotting && h.barkCd === 0) { spotSound.play(); h.barkCd = spotSound.cooldown; }
       h.wasSpotting = spotted;
     }
+    if (isCalmed(h)) return;                               // soothed by the lyre: stands quietly where it is
     updateWander(h, dt);
   });
 }
@@ -2143,7 +2163,7 @@ function updateVehicles(dt) {
 }
 
 function canDetect(h) {
-  if (h.dead || inBush(player)) return false;
+  if (h.dead || inBush(player) || isCalmed(h)) return false;
   const hc = {x: h.x + h.w/2, y: h.y + h.h/2};
   const pc = center(player);
   const dx = pc.x - hc.x, dy = pc.y - hc.y;
@@ -3694,8 +3714,9 @@ function drawHazard(h) {
   }
   const seeing = canDetect(h);
   h.alert = seeing;                    // lets a dog show it has spotted you (open mouth, perked ears)
-  drawVisionShape(h, seeing);
+  if (!isCalmed(h)) drawVisionShape(h, seeing);
   drawHazardBody(h);
+  if (isCalmed(h)) drawNote(h.x + h.w / 2 + 12, h.y - 4 + Math.sin(animTime * 3 + h.x) * 3, 18, 1);
   if (h.hitFlash > 0) {                // brief white flash when struck
     ctx.fillStyle = 'rgba(255,255,255,' + (0.65 * h.hitFlash / 0.15).toFixed(2) + ')';
     ctx.beginPath(); ctx.ellipse(h.x + h.w / 2, h.y + h.h / 2, h.w / 2 + 5, h.h / 2 + 4, 0, 0, Math.PI * 2); ctx.fill();
@@ -5380,6 +5401,7 @@ function fpReindeer(p, h, yaw) {
   fpBlit(p, fpReindeerSprite(vw.v, walking ? fpFrame(1.3, (h.pts[0].x % 7) / 7) : -1), vw.flip);
   fpHitFlash(p, h, 28, 14, 28);
   if (h.alert) fpAlertMark(p, 64);
+  if (isCalmed(h)) drawNote(p.sx + 14 * p.s, p.by - (62 + Math.sin(animTime * 3) * 3) * p.sv, Math.max(14, Math.min(40, 18 * p.s)), 1);
 }
 
 /* Baby capybaras */
@@ -5420,7 +5442,7 @@ function fpBaby(p, f, face, moving, yaw, loose) {
   fpBlit(q, fpBabySprite(vw.v, moving ? fpFrame(2.6, (f.ph || 0) / 6.3) : -1), vw.flip);
   if (loose) {                                                  // a loose one: a little heart floats above
     ctx.font = 'bold ' + Math.max(10, Math.min(28, 9 * p.s)) + 'px Segoe UI'; ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,90,150,0.95)'; ctx.fillText('♥', p.sx, p.by - (23 + Math.sin(t * 2) * 1.2) * p.sv);
+    ctx.fillStyle = lyreCalmT > 0 ? '#cfe8ff' : 'rgba(255,90,150,0.95)'; ctx.fillText(lyreCalmT > 0 ? '♪' : '♥', p.sx, p.by - (23 + Math.sin(t * 2) * 1.2) * p.sv);
   }
 }
 
@@ -5777,6 +5799,7 @@ function drawFirstPerson() {
   drawFpFloaters(ex, ey, yaw);
   drawFpSnout();
   drawFpSaber();
+  if (lyreCalmT > 0) drawFpLyre();
   drawFpOverlays();
 }
 
@@ -5855,11 +5878,11 @@ function drawMinimap() {
   hazards.forEach(h => {
     if (h.dead) return;
     const c = center(h), x = mx(c.x), y = my(c.y), seeing = canDetect(h);
-    if (h.mode !== 'radius' && h.visionRange) {                                                                              // the cone each can see you in
+    if (h.mode !== 'radius' && h.visionRange && !isCalmed(h)) {                                                              // the cone each can see you in
       ctx.fillStyle = seeing ? st.coneSeen : st.cone;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, h.visionRange * MM_SX, h.angle - h.visionHalfAngle, h.angle + h.visionHalfAngle); ctx.closePath(); ctx.fill();
     }
-    dot(c.x, c.y, 2.7, seeing ? st.seen : st.hunter);
+    dot(c.x, c.y, 2.7, isCalmed(h) ? '#7ab8ff' : seeing ? st.seen : st.hunter);
   });
   if (boss && !boss.dead) { const c = center(boss); dot(c.x, c.y, 4.2, '#7a1d1d'); ctx.strokeStyle = '#ff5a5a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(mx(c.x), my(c.y), 4.4, 0, Math.PI * 2); ctx.stroke(); }
 
@@ -5940,6 +5963,7 @@ function drawScene() {
   hazards.forEach(drawHazard);
   if (boss) { drawVaderTelegraph(boss); drawVader(boss); }
   drawCapybara(player);
+  if (lyreCalmT > 0) drawLyrePlaying();
   drawFloaters();
   ctx.restore();
 }
@@ -5960,6 +5984,7 @@ function updateLegendHud() {
 }
 
 function updateHud(seenNow) {
+  updateLyreUI();
   updateBabyCmdUI();
   document.getElementById('pauseBtn').classList.toggle('hidden', state !== 'playing');
   const guardFill = document.getElementById('guardFill');
@@ -5989,6 +6014,7 @@ function loop(now) {
   if (state === 'playing') {
     elapsed += dt;
     updatePlayer(dt);
+    updateLyre(dt);
     updateHazards(dt);
     updateBoss(dt);
     updateEffects(dt);
@@ -6196,6 +6222,113 @@ function hideLeaderboard() {
   state = 'credits';
 }
 
+/* ---------- The lyre ---------- */
+// Rescue every baby capybara on the Field and you're given a lyre, which you keep for the rest of the run. Play it
+// (L, or the button) and for a few seconds the music calms things down: loose baby capybaras stop running from you,
+// and reindeer stop where they are and take no notice of you. Then it needs a moment before it can be played again.
+const LYRE_LEVEL = 2;                   // the Field
+const LYRE_CALM_TIME = 8;               // seconds each tune keeps them calm
+const LYRE_RECHARGE = 12;               // seconds after that before you can play again
+let hasLyre = false, lyreCalmT = 0, lyreCd = 0;
+
+function isCalmed(h) { return lyreCalmT > 0 && h.type === 'reindeer' && !h.dead; }
+function resetLyreTimers() { lyreCalmT = 0; lyreCd = 0; }
+
+function checkLyre() {                                      // called whenever a baby is rescued
+  if (hasLyre || currentLevelIndex !== LYRE_LEVEL) return;
+  const ids = levelBabyIds(LYRE_LEVEL);
+  if (!ids.length || !ids.every(id => friendsFound.has(id))) return;
+  hasLyre = true;
+  const pc = center(player);
+  floaters.push({ x: pc.x, y: player.y - 34, t: 0, text: '🎵 YOU GOT THE LYRE!', tone: 'green' });
+  floaters.push({ x: pc.x, y: player.y - 52, t: 0, text: 'PRESS L TO PLAY IT', tone: 'blue' });
+  sfxLyre();
+}
+function playLyre() {
+  if (!hasLyre || state !== 'playing' || lyreCalmT > 0 || lyreCd > 0) return;
+  lyreCalmT = LYRE_CALM_TIME;
+  hazards.forEach(h => { if (h.type === 'reindeer') { h.wasSpotting = false; h.alert = false; } });
+  friends.forEach(f => { if (f.mode === 'flee') { f.mode = 'pause'; f.t = 0.5; } });
+  const pc = center(player);
+  floaters.push({ x: pc.x, y: player.y - 26, t: 0, text: '♪ CALM ♪', tone: 'green' });
+  sfxLyre();
+}
+function updateLyre(dt) {
+  if (lyreCalmT > 0) {
+    lyreCalmT -= dt;
+    if (lyreCalmT <= 0) { lyreCalmT = 0; lyreCd = LYRE_RECHARGE; }
+  } else if (lyreCd > 0) lyreCd = Math.max(0, lyreCd - dt);
+}
+function sfxLyre() {                                        // a soft rising and falling arpeggio, like plucked strings
+  [523, 659, 784, 988, 1175, 988, 784, 1047].forEach((f, i) => {
+    tone(f, 0.5, { type: 'triangle', vol: 0.13, delay: i * 0.13 });
+    tone(f * 2, 0.25, { type: 'sine', vol: 0.04, delay: i * 0.13 });
+  });
+}
+
+let lastLyreUi = '';
+function updateLyreUI() {
+  const btn = document.getElementById('lyreBtn'), row = document.getElementById('lyreRow');
+  const showBtn = hasLyre && state === 'playing';
+  const label = lyreCalmT > 0 ? '🎵 Calming ' + Math.ceil(lyreCalmT) + 's' : lyreCd > 0 ? '🎵 Recharging ' + Math.ceil(lyreCd) + 's' : '🎵 Play lyre (L)';
+  let progress = '';
+  if (!hasLyre && currentLevelIndex === LYRE_LEVEL) {
+    const ids = levelBabyIds(LYRE_LEVEL), got = ids.filter(id => friendsFound.has(id)).length;
+    const gone = ids.some(id => !friendsFound.has(id) && friendEscapes.has(id) && friendEscapes.get(id).level !== LYRE_LEVEL);
+    progress = '🎵 Lyre: ' + (gone ? 'a baby got away' : got + '/' + ids.length + ' babies');
+  }
+  const key = showBtn + label + progress;
+  if (key === lastLyreUi) return;
+  lastLyreUi = key;
+  btn.classList.toggle('hidden', !showBtn);
+  btn.classList.toggle('active', lyreCalmT > 0);
+  btn.classList.toggle('waiting', lyreCalmT <= 0 && lyreCd > 0);
+  btn.textContent = label;
+  row.classList.toggle('hidden', !progress);
+  row.textContent = progress;
+}
+
+function drawLyreShape(x, y, s) {                            // a little golden lyre: two curved arms, a crossbar and strings
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s); ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,255,230,0.9)'; ctx.lineWidth = 0.6;
+  for (let i = -4; i <= 4; i += 2) { ctx.beginPath(); ctx.moveTo(i, -9); ctx.lineTo(i * 0.7, 7); ctx.stroke(); }
+  [[3.4, '#7a5200'], [2.2, '#ffcc33'], [0.8, '#fff2b0']].forEach(([w, c]) => {
+    ctx.strokeStyle = c; ctx.lineWidth = w;
+    [-1, 1].forEach(sd => { ctx.beginPath(); ctx.moveTo(sd * 3, 9); ctx.bezierCurveTo(sd * 11, 6, sd * 3, -5, sd * 8, -12); ctx.stroke(); });
+    ctx.beginPath(); ctx.moveTo(-7, -9); ctx.lineTo(7, -9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-4, 8.5); ctx.lineTo(4, 8.5); ctx.stroke();
+  });
+  ctx.restore();
+}
+function drawNote(x, y, size, alpha) {
+  ctx.save();
+  ctx.globalAlpha *= alpha; ctx.font = 'bold ' + size + 'px Segoe UI'; ctx.textAlign = 'center';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,40,90,0.7)'; ctx.strokeText('♪', x, y);
+  ctx.fillStyle = '#cfe8ff'; ctx.fillText('♪', x, y);
+  ctx.restore();
+}
+function drawLyrePlaying() {                                 // overhead: rings of music spreading out from the capybara
+  const pc = center(player);
+  ctx.save();
+  for (let i = 0; i < 3; i++) {
+    const u = (animTime * 0.55 + i / 3) % 1;
+    ctx.strokeStyle = 'rgba(190,225,255,' + (0.55 * (1 - u)).toFixed(2) + ')'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(pc.x, pc.y, 18 + u * 120, 0, Math.PI * 2); ctx.stroke();
+    drawNote(pc.x + Math.cos(animTime * 1.6 + i * 2.1) * (22 + u * 40), pc.y - 14 - u * 36, 16, 1 - u);
+  }
+  drawLyreShape(pc.x, pc.y - 30 + Math.sin(animTime * 6) * 1.5, 1.15);
+  ctx.restore();
+}
+function drawFpLyre() {                                      // first person: you're holding it up in front of you
+  const x = W * 0.3, y = H - 96 + Math.sin(animTime * 5) * 3;
+  drawLyreShape(x, y, 8);
+  for (let i = 0; i < 5; i++) {
+    const u = (animTime * 0.45 + i / 5) % 1;
+    drawNote(x + Math.sin(animTime * 2 + i * 1.7) * 90 + (i - 2) * 40, y - 110 - u * 170, 30, 1 - u);
+  }
+}
+
 /* ---------- Pause and save ---------- */
 // Pausing (the ⏸ button, P or Esc) freezes everything and writes the whole run to localStorage: which level you're
 // on, your lives, time, health and guard, every baby capybara you've found or that escaped, where everyone and
@@ -6206,7 +6339,7 @@ const SAVE_KEY = 'capybara_save_v1';
 function snapshotGame() {
   const pick = (o, keys) => { const r = {}; keys.forEach(k => { r[k] = o[k]; }); return r; };
   return {
-    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, legendary: !!player.legendary,
+    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, legendary: !!player.legendary, hasLyre, lyreCalmT, lyreCd,
     found: [...friendsFound], escapes: [...friendEscapes], spots: friendSpots, babyMode,
     player: pick(player, ['x', 'y', 'facing', 'hp', 'guard', 'guardBroken', 'speedBoostT']),
     hazards: hazards.map(h => pick(h, ['x', 'y', 'angle', 'hp', 'dead', 'deadT', 'wmode', 'wt', 'wang', 'idx', 'forward'])),
@@ -6239,6 +6372,7 @@ function restoreGame(sv) {
   loadLevel(sv.level);
   Object.assign(player, sv.player); player.suspicion = 0;
   player.legendary = !!sv.legendary;
+  hasLyre = !!sv.hasLyre; lyreCalmT = sv.lyreCalmT || 0; lyreCd = sv.lyreCd || 0; lastLyreUi = '';
   if (sv.hazards.length === hazards.length) hazards.forEach((h, i) => Object.assign(h, sv.hazards[i]));
   if (sv.vehicles.length === vehicles.length) vehicles.forEach((v, i) => Object.assign(v, sv.vehicles[i]));
   if (sv.pickups.length === pickups.length) pickups.forEach((p, i) => Object.assign(p, sv.pickups[i]));
@@ -6399,7 +6533,7 @@ touchControls.querySelectorAll('.tc-btn').forEach(btn => {
   const release = () => { pressTouchKey(key, false); btn.classList.remove('down'); };
   ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => btn.addEventListener(t, release));
 });
-[['atkBtn', commandAttack], ['retBtn', commandRetreat]].forEach(([id, fn]) => {      // the on-screen command buttons (mouse or touch)
+[['atkBtn', commandAttack], ['retBtn', commandRetreat], ['lyreBtn', playLyre]].forEach(([id, fn]) => {      // the on-screen command buttons (mouse or touch)
   const btn = document.getElementById(id);
   btn.addEventListener('pointerdown', e => { e.preventDefault(); ensureAudio(); fn(); btn.blur(); });
 });
