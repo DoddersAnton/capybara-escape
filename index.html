@@ -269,7 +269,7 @@
     Watch the meter in the top corner. Your baby capybaras only fight when you <b>command</b> them: press <b>F</b> (or the Attack button) to send them after the nearest
     person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
-    Finish a level in <b>under 7 seconds</b> and the next one gives you the <b>legendary sword</b> — double damage and a longer reach.
+    Rescue <b>every baby capybara</b> on a level before you leave and the next one gives you the <b>legendary sword</b> — double damage and a longer reach.
     Press <b>P</b> or <b>Esc</b> (or the ⏸ button in the top corner) to <b>pause</b> — your progress is saved, and <b>Continue</b> on the title screen picks it up again.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
     follow-cam, or true first person through the capybara's own eyes (there,
@@ -986,13 +986,17 @@ function updateWaterfallSound(dt) {
 // Dogs and cows can't be hurt.
 const SABER_TARGETS = { human: { hp: 6, damage: 1 }, reindeer: { hp: 4, damage: 2 }, alien: { hp: 5, damage: 1 } };
 const SABER_REACH = 54;                 // px from the capybara's centre to the person's centre
-// Finish a level in under LEGEND_TIME seconds and you carry the legendary sword through the next one.
-const LEGEND_TIME = 7;                  // seconds of play (pauses and intro screens don't count)
+// Leave a level having rescued every baby capybara in it and you carry the legendary sword through the next one.
 const LEGEND_DAMAGE = 2;                // it hits this many times as hard...
 const LEGEND_REACH = 16;                // ...and this much further
-let levelStart = 0;                     // what the run's clock read when this level began
 function saberPower() { return player.legendary ? LEGEND_DAMAGE : 1; }
 function saberExtraReach() { return player.legendary ? LEGEND_REACH : 0; }
+// Every baby that belongs to a level: the ones that started there, plus any that escaped into it from the one before.
+// One that slips out of the exit before you catch it counts against the level it left.
+function levelBabyIds(idx) {
+  const own = (friendSpots[idx] || levels[idx].friends || []).map((_, i) => idx + ':' + i);
+  return own.concat([...friendEscapes].filter(([, e]) => e.level === idx).map(([id]) => id));
+}
 const SABER_ARC = 75 * DEG;             // each side of the direction the capybara is facing
 const SABER_COOLDOWN = 0.3;             // seconds between swings (hold Space to keep swinging)
 const SWING_TIME = 0.22;                // how long the swing animation lasts
@@ -1068,7 +1072,6 @@ function instantiateVehicles(defs, diff) {
 // a catch or restart still clears it).
 function loadLevel(idx, keepBoost = false) {
   currentLevelIndex = idx;
-  levelStart = elapsed;
   player.legendary = false;
   currentLevel = levels[idx];
   obstacles = currentLevel.obstacles;
@@ -1128,13 +1131,13 @@ function startGame() {
   state = 'playing';
 }
 
-function showLevelIntro(idx, swordTime = null) {       // swordTime: how quickly the last level was beaten, if fast enough to earn the sword
+function showLevelIntro(idx, earnedSword = false) {    // earnedSword: every baby on the last level was rescued
   loadLevel(idx, true);                                  // a remaining speed boost carries over (paused while this screen shows)
-  player.legendary = swordTime !== null;
+  player.legendary = earnedSword;
   const sword = document.getElementById('introSword');
   sword.classList.toggle('hidden', !player.legendary);
   if (player.legendary) {
-    sword.textContent = '⚔ LEGENDARY SWORD! You finished in ' + swordTime.toFixed(1) + 's. On this level your saber does double damage and reaches further.';
+    sword.textContent = '⚔ LEGENDARY SWORD! You rescued every baby capybara on the last level. On this level your saber does double damage and reaches further.';
     sfxAllFriends();
   }
   document.getElementById('introTitle').textContent = currentLevel.name;
@@ -2196,8 +2199,8 @@ function checkWin() {
     }
     if (currentLevelIndex < levels.length - 1) {
       sfxLevelComplete();
-      const levelTime = elapsed - levelStart;
-      showLevelIntro(currentLevelIndex + 1, levelTime < LEGEND_TIME ? levelTime : null);
+      const ids = levelBabyIds(currentLevelIndex);
+      showLevelIntro(currentLevelIndex + 1, ids.length > 0 && ids.every(id => friendsFound.has(id)));
     } else {
       sfxWin();
       state = 'won';
@@ -5941,12 +5944,17 @@ function drawScene() {
   ctx.restore();
 }
 
-// Under the clock: either the sword you're carrying, or the countdown to earning it (not on the last level, and not
-// against Vader, where seven seconds isn't a realistic target).
+// Under the clock: the sword you're carrying, and how you're doing at earning it for the next level (there's
+// nothing to earn on the last one).
 function updateLegendHud() {
-  const row = document.getElementById('legendRow'), left = LEGEND_TIME - (elapsed - levelStart);
-  const chasing = left > 0 && currentLevelIndex < levels.length - 1 && !currentLevel.boss;
-  const text = player.legendary ? '⚔ Legendary Sword' + (chasing ? ' · keep it: ' + left.toFixed(1) + 's' : '') : chasing ? '⚔ Legendary sword: ' + left.toFixed(1) + 's' : '';
+  const row = document.getElementById('legendRow');
+  let chase = '';
+  if (currentLevelIndex < levels.length - 1) {
+    const ids = levelBabyIds(currentLevelIndex), got = ids.filter(id => friendsFound.has(id)).length;
+    const gone = ids.some(id => !friendsFound.has(id) && friendEscapes.has(id) && friendEscapes.get(id).level !== currentLevelIndex);
+    chase = gone ? 'a baby got away' : got === ids.length ? 'earned — reach the exit!' : got + '/' + ids.length + ' babies';
+  }
+  const text = player.legendary ? '⚔ Legendary Sword' + (chase ? ' · next: ' + chase : '') : chase ? '⚔ Legendary sword: ' + chase : '';
   row.classList.toggle('hidden', !text);
   if (row.textContent !== text) row.textContent = text;
 }
@@ -6198,7 +6206,7 @@ const SAVE_KEY = 'capybara_save_v1';
 function snapshotGame() {
   const pick = (o, keys) => { const r = {}; keys.forEach(k => { r[k] = o[k]; }); return r; };
   return {
-    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, levelStart, legendary: !!player.legendary,
+    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, legendary: !!player.legendary,
     found: [...friendsFound], escapes: [...friendEscapes], spots: friendSpots, babyMode,
     player: pick(player, ['x', 'y', 'facing', 'hp', 'guard', 'guardBroken', 'speedBoostT']),
     hazards: hazards.map(h => pick(h, ['x', 'y', 'angle', 'hp', 'dead', 'deadT', 'wmode', 'wt', 'wang', 'idx', 'forward'])),
@@ -6230,7 +6238,6 @@ function restoreGame(sv) {
   if (Array.isArray(sv.spots) && sv.spots.length === levels.length) friendSpots = sv.spots;
   loadLevel(sv.level);
   Object.assign(player, sv.player); player.suspicion = 0;
-  levelStart = typeof sv.levelStart === 'number' ? sv.levelStart : sv.elapsed - LEGEND_TIME;     // older saves can't earn it mid-level
   player.legendary = !!sv.legendary;
   if (sv.hazards.length === hazards.length) hazards.forEach((h, i) => Object.assign(h, sv.hazards[i]));
   if (sv.vehicles.length === vehicles.length) vehicles.forEach((v, i) => Object.assign(v, sv.vehicles[i]));
