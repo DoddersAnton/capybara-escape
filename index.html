@@ -1000,7 +1000,8 @@ const SABER_TARGETS = { human: { hp: 6, damage: 1 }, reindeer: { hp: 4, damage: 
 const SABER_REACH = 54;                 // px from the capybara's centre to the person's centre
 // Leave a level having rescued every baby capybara in it and you carry the legendary sword through the next one.
 const LEGEND_DAMAGE = 2;                // it hits this many times as hard...
-const LEGEND_REACH = 16;                // ...and this much further
+const LEGEND_REACH = 40;                // ...and this much further: out past Vader's own reach (VADER_REACH), so you can hit him safely
+const LEGEND_BLADE = 86;                // how long its blade is drawn, so the tip reaches as far as it hits
 function saberPower() { return player.legendary ? LEGEND_DAMAGE : 1; }
 function saberExtraReach() { return player.legendary ? LEGEND_REACH : 0; }
 // Every baby that belongs to a level: the ones that started there, plus any that escaped into it from the one before.
@@ -3892,7 +3893,7 @@ function drawBlade(px, py, ang, len, glow) {
   ctx.fillRect(-2.5, -2.1, 1.6, 4.2);
   ctx.lineCap = 'round';
   const legend = !!player.legendary;
-  if (legend) { len *= 1.45; glow += 12; }                                          // longer, golden and brighter
+  if (legend) glow += 12;                                                           // golden and brighter (callers draw it longer)
   ctx.shadowColor = legend ? '#ffb300' : '#4fd1ff';
   ctx.shadowBlur = glow;
   ctx.strokeStyle = legend ? 'rgba(255,196,40,0.97)' : 'rgba(79,209,255,0.95)'; ctx.lineWidth = 4.4 + 3 * k + (legend ? 1.6 : 0);
@@ -3925,7 +3926,7 @@ function drawGuardStance(p) {
   ctx.beginPath(); ctx.moveTo(8, 0); ctx.arc(8, 0, 36, -BLOCK_ARC, BLOCK_ARC); ctx.closePath(); ctx.fill();
   ctx.strokeStyle = 'rgba(170,238,255,' + (0.6 + 0.3 * pulse).toFixed(2) + ')'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(8, 0, 36, -BLOCK_ARC, BLOCK_ARC); ctx.stroke();
-  drawBlade(31, 15, -Math.PI / 2 + 0.08, 30, 12);
+  drawBlade(31, 15, -Math.PI / 2 + 0.08, p.legendary ? 46 : 30, 12);
   ctx.restore();
 }
 
@@ -3942,18 +3943,18 @@ function drawSaber(p) {
     const trail = Math.min(spinRotation(p), 3.6), tip = 0.44;
     ctx.save();
     ctx.strokeStyle = p.legendary ? 'rgba(255,196,40,0.5)' : 'rgba(79,209,255,0.4)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, 0, p.legendary ? 44 : 32, tip - trail, tip); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, p.legendary ? LEGEND_BLADE + 6 : 32, tip - trail, tip); ctx.stroke();
     ctx.restore();
   }
   const swinging = p.swingT >= 0;
   const u = swinging ? Math.min(1, p.swingT / SWING_TIME) : 0;
   const start = 0.95, end = -1.25;
   const ang = swinging ? start + (end - start) * (1 - (1 - u) * (1 - u)) : 0.2;
-  const px = 5, py = 9.5, len = 27;
+  const px = 5, py = 9.5, len = p.legendary ? LEGEND_BLADE : 27;
 
   if (swinging) {
     ctx.fillStyle = p.legendary ? 'rgba(255,196,40,0.32)' : 'rgba(79,209,255,0.24)';
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, (p.legendary ? len * 1.45 : len) + 3, ang, start); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, len + 3, ang, start); ctx.closePath(); ctx.fill();
   }
   drawBlade(px, py, ang, len, swinging ? 14 : 8);
 }
@@ -5719,7 +5720,7 @@ function drawFpSnout() {
   ctx.beginPath(); ctx.ellipse(cx + 12, cy - 33, 6, 3.2, 0.2, 0, Math.PI * 2); ctx.fill();
 }
 function drawFpSaber() {
-  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, legend = !!player.legendary, L = legend ? 480 : 400;
+  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, legend = !!player.legendary, L = legend ? 560 : 400;
   let bx = W * 0.83, by = H + 40 + bob, th = -0.3, glow = 1;
   if (player.blocking) { bx = W * 0.56; by = H + 40; th = -0.05; glow = 1.3 + 0.3 * Math.sin(animTime * 30); }
   else if (player.swingT >= 0) {                                                       // sweeps right to left across the view
