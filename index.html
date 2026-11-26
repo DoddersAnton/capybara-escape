@@ -120,6 +120,9 @@
   #pauseBtn:hover { background: rgba(0,0,0,0.65); }
   #pauseBtn.hidden { display: none; }
   .pause-hint { font-size: 12px; opacity: 0.8; }
+  #legendRow { color: #ffd34d; font-weight: 700; font-size: 13px; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+  #legendRow.hidden, #introSword.hidden { display: none; }
+  #introSword { color: #ffd34d; font-weight: 700; }
   #babyCmd { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   #babyCmd.hidden { display: none; }
   #babyCmd button {
@@ -227,6 +230,7 @@
     <div id="levelLabel">Level 1 — The Zoo</div>
     <div id="timerLabel">
       <div>Time: <span id="timeVal">0.0</span>s</div>
+      <div id="legendRow" class="hidden"></div>
       <div id="friendsMeter" title="Baby capybaras found">🐹 <b id="friendsCount">0</b> / <span id="friendsTotal">15</span>
         <div id="friendsBar"><div id="friendsFill"></div></div>
         <div id="powerRow" class="hidden">💪 +<span id="powerVal">0</span> damage</div>
@@ -265,6 +269,7 @@
     Watch the meter in the top corner. Your baby capybaras only fight when you <b>command</b> them: press <b>F</b> (or the Attack button) to send them after the nearest
     person, reindeer, car or Vader — never a dog or a cow — and <b>R</b> (Retreat) to call them straight back to you.
     A small <b>map</b> in the corner of every view changes style with each level — press <b>M</b> to hide or show it.
+    Finish a level in <b>under 7 seconds</b> and the next one gives you the <b>legendary sword</b> — double damage and a longer reach.
     Press <b>P</b> or <b>Esc</b> (or the ⏸ button in the top corner) to <b>pause</b> — your progress is saved, and <b>Continue</b> on the title screen picks it up again.
     Press <b>V</b> to change how you're watching the game — overhead, a closer
     follow-cam, or true first person through the capybara's own eyes (there,
@@ -292,6 +297,7 @@
     <h2 id="introTitle">Level 2 — The Road</h2>
     <div id="introStars"></div>
     <p id="introTip"></p>
+    <p id="introSword" class="hidden"></p>
     <p id="introFriends"></p>
     <button id="introContinueBtn">Continue</button>
   </div>
@@ -980,6 +986,13 @@ function updateWaterfallSound(dt) {
 // Dogs and cows can't be hurt.
 const SABER_TARGETS = { human: { hp: 6, damage: 1 }, reindeer: { hp: 4, damage: 2 }, alien: { hp: 5, damage: 1 } };
 const SABER_REACH = 54;                 // px from the capybara's centre to the person's centre
+// Finish a level in under LEGEND_TIME seconds and you carry the legendary sword through the next one.
+const LEGEND_TIME = 7;                  // seconds of play (pauses and intro screens don't count)
+const LEGEND_DAMAGE = 2;                // it hits this many times as hard...
+const LEGEND_REACH = 16;                // ...and this much further
+let levelStart = 0;                     // what the run's clock read when this level began
+function saberPower() { return player.legendary ? LEGEND_DAMAGE : 1; }
+function saberExtraReach() { return player.legendary ? LEGEND_REACH : 0; }
 const SABER_ARC = 75 * DEG;             // each side of the direction the capybara is facing
 const SABER_COOLDOWN = 0.3;             // seconds between swings (hold Space to keep swinging)
 const SWING_TIME = 0.22;                // how long the swing animation lasts
@@ -1055,6 +1068,8 @@ function instantiateVehicles(defs, diff) {
 // a catch or restart still clears it).
 function loadLevel(idx, keepBoost = false) {
   currentLevelIndex = idx;
+  levelStart = elapsed;
+  player.legendary = false;
   currentLevel = levels[idx];
   obstacles = currentLevel.obstacles;
   bushes = currentLevel.bushes;
@@ -1113,8 +1128,15 @@ function startGame() {
   state = 'playing';
 }
 
-function showLevelIntro(idx) {
+function showLevelIntro(idx, swordTime = null) {       // swordTime: how quickly the last level was beaten, if fast enough to earn the sword
   loadLevel(idx, true);                                  // a remaining speed boost carries over (paused while this screen shows)
+  player.legendary = swordTime !== null;
+  const sword = document.getElementById('introSword');
+  sword.classList.toggle('hidden', !player.legendary);
+  if (player.legendary) {
+    sword.textContent = '⚔ LEGENDARY SWORD! You finished in ' + swordTime.toFixed(1) + 's. On this level your saber does double damage and reaches further.';
+    sfxAllFriends();
+  }
   document.getElementById('introTitle').textContent = currentLevel.name;
   document.getElementById('introTip').textContent = currentLevel.tip;
   const arrived = [...friendEscapes.values()].filter(e => e.level === idx).length;
@@ -1446,9 +1468,9 @@ function saberStrike(omni) {
     if (!target || h.dead) return;
     const hc = center(h);
     const dx = hc.x - pc.x, dy = hc.y - pc.y;
-    if (Math.hypot(dx, dy) > SABER_REACH) return;
+    if (Math.hypot(dx, dy) > SABER_REACH + saberExtraReach()) return;
     if (!omni && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
-    const dmg = target.damage + damageBonus();
+    const dmg = (target.damage + damageBonus()) * saberPower();
     h.hp -= dmg;
     h.hitFlash = 0.15;
     floaters.push({ x: hc.x, y: h.y - 16, t: 0, text: '-' + fmtDamage(dmg) });
@@ -1459,9 +1481,9 @@ function saberStrike(omni) {
     if (v.dead) return;
     const nx = Math.max(v.x, Math.min(pc.x, v.x + v.w)), ny = Math.max(v.y, Math.min(pc.y, v.y + v.h));
     const dx = nx - pc.x, dy = ny - pc.y, dist = Math.hypot(dx, dy);
-    if (dist > CAR_REACH) return;
+    if (dist > CAR_REACH + saberExtraReach()) return;
     if (!omni && dist > 0.5 && Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) > SABER_ARC) return;
-    const carDmg = SABER_CAR_DAMAGE + damageBonus();
+    const carDmg = (SABER_CAR_DAMAGE + damageBonus()) * saberPower();
     v.hp -= carDmg;
     v.hitFlash = 0.15;
     floaters.push({ x: nx, y: v.y - 12, t: 0, text: '-' + fmtDamage(carDmg) });
@@ -1472,8 +1494,8 @@ function saberStrike(omni) {
   let bossHit = false, bossDown = false;
   if (boss && !boss.dead) {
     const bc = center(boss), dx = bc.x - pc.x, dy = bc.y - pc.y;
-    if (Math.hypot(dx, dy) <= SABER_REACH + 8 && (omni || Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC)) {
-      const bossDmg = 2.5 + damageBonus();
+    if (Math.hypot(dx, dy) <= SABER_REACH + 8 + saberExtraReach() && (omni || Math.abs(normAngle(Math.atan2(dy, dx) - player.facing)) <= SABER_ARC)) {
+      const bossDmg = (2.5 + damageBonus()) * saberPower();
       boss.hp -= bossDmg;
       woundBoss();
       boss.hitFlash = 0.15;
@@ -2174,7 +2196,8 @@ function checkWin() {
     }
     if (currentLevelIndex < levels.length - 1) {
       sfxLevelComplete();
-      showLevelIntro(currentLevelIndex + 1);
+      const levelTime = elapsed - levelStart;
+      showLevelIntro(currentLevelIndex + 1, levelTime < LEGEND_TIME ? levelTime : null);
     } else {
       sfxWin();
       state = 'won';
@@ -3844,13 +3867,24 @@ function drawBlade(px, py, ang, len, glow) {
   ctx.fillStyle = '#3a3a44';
   ctx.fillRect(-2.5, -2.1, 1.6, 4.2);
   ctx.lineCap = 'round';
-  ctx.shadowColor = '#4fd1ff';
+  const legend = !!player.legendary;
+  if (legend) { len *= 1.45; glow += 12; }                                          // longer, golden and brighter
+  ctx.shadowColor = legend ? '#ffb300' : '#4fd1ff';
   ctx.shadowBlur = glow;
-  ctx.strokeStyle = 'rgba(79,209,255,0.95)'; ctx.lineWidth = 4.4 + 3 * k;
+  ctx.strokeStyle = legend ? 'rgba(255,196,40,0.97)' : 'rgba(79,209,255,0.95)'; ctx.lineWidth = 4.4 + 3 * k + (legend ? 1.6 : 0);
   ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(len, 0); ctx.stroke();
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = '#effcff'; ctx.lineWidth = 1.8 + 1.2 * k;
+  ctx.strokeStyle = legend ? '#fff8dc' : '#effcff'; ctx.lineWidth = 1.8 + 1.2 * k;
   ctx.beginPath(); ctx.moveTo(2, 0); ctx.lineTo(len, 0); ctx.stroke();
+  if (legend) {                                                                     // a jewelled crossguard and twinkles along the blade
+    ctx.fillStyle = '#e8a800'; ctx.fillRect(0.5, -5, 3, 10);
+    ctx.fillStyle = '#e0245e'; ctx.beginPath(); ctx.arc(2, 0, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8;
+    for (let i = 0; i < 3; i++) {
+      const x = 8 + ((animTime * 26 + i * len / 3) % Math.max(1, len - 8)), r = 2.2 + Math.sin(animTime * 9 + i * 2);
+      ctx.beginPath(); ctx.moveTo(x - r, 0); ctx.lineTo(x + r, 0); ctx.moveTo(x, -r * 1.6); ctx.lineTo(x, r * 1.6); ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
@@ -3883,8 +3917,8 @@ function drawSaber(p) {
   if (p.spinT >= 0) {                                     // a glowing ring streaks behind the blade tip as it whirls
     const trail = Math.min(spinRotation(p), 3.6), tip = 0.44;
     ctx.save();
-    ctx.strokeStyle = 'rgba(79,209,255,0.4)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, 0, 32, tip - trail, tip); ctx.stroke();
+    ctx.strokeStyle = p.legendary ? 'rgba(255,196,40,0.5)' : 'rgba(79,209,255,0.4)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, 0, p.legendary ? 44 : 32, tip - trail, tip); ctx.stroke();
     ctx.restore();
   }
   const swinging = p.swingT >= 0;
@@ -3894,8 +3928,8 @@ function drawSaber(p) {
   const px = 5, py = 9.5, len = 27;
 
   if (swinging) {
-    ctx.fillStyle = 'rgba(79,209,255,0.24)';
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, len + 3, ang, start); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = p.legendary ? 'rgba(255,196,40,0.32)' : 'rgba(79,209,255,0.24)';
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, (p.legendary ? len * 1.45 : len) + 3, ang, start); ctx.closePath(); ctx.fill();
   }
   drawBlade(px, py, ang, len, swinging ? 14 : 8);
 }
@@ -5660,7 +5694,7 @@ function drawFpSnout() {
   ctx.beginPath(); ctx.ellipse(cx + 12, cy - 33, 6, 3.2, 0.2, 0, Math.PI * 2); ctx.fill();
 }
 function drawFpSaber() {
-  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, L = 400;
+  const bob = player.moving ? Math.sin(animTime * 11) * 5 : 0, legend = !!player.legendary, L = legend ? 480 : 400;
   let bx = W * 0.83, by = H + 40 + bob, th = -0.3, glow = 1;
   if (player.blocking) { bx = W * 0.56; by = H + 40; th = -0.05; glow = 1.3 + 0.3 * Math.sin(animTime * 30); }
   else if (player.swingT >= 0) {                                                       // sweeps right to left across the view
@@ -5669,11 +5703,22 @@ function drawFpSaber() {
   }
   const tx = bx + Math.sin(th) * L, ty = by - Math.cos(th) * L, hx = bx + Math.sin(th) * 70, hy = by - Math.cos(th) * 70;
   ctx.lineCap = 'round';
-  [['rgba(79,209,255,' + (0.22 * glow).toFixed(2) + ')', 30], ['rgba(110,225,255,0.55)', 15], ['#e9fbff', 6]].forEach(l => {
+  const blade = legend ? [['rgba(255,180,0,' + (0.3 * glow).toFixed(2) + ')', 40], ['rgba(255,206,60,0.75)', 20], ['#fff8dc', 8]]
+                       : [['rgba(79,209,255,' + (0.22 * glow).toFixed(2) + ')', 30], ['rgba(110,225,255,0.55)', 15], ['#e9fbff', 6]];
+  blade.forEach(l => {
     ctx.strokeStyle = l[0]; ctx.lineWidth = l[1]; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke();
   });
   ctx.strokeStyle = '#2f2f38'; ctx.lineWidth = 17; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(hx, hy); ctx.stroke();    // the hilt
-  ctx.strokeStyle = '#b4b4c0'; ctx.lineWidth = 19; ctx.beginPath(); ctx.moveTo(hx - Math.sin(th) * 10, hy + Math.cos(th) * 10); ctx.lineTo(hx, hy); ctx.stroke();
+  ctx.strokeStyle = legend ? '#e8a800' : '#b4b4c0'; ctx.lineWidth = 19; ctx.beginPath(); ctx.moveTo(hx - Math.sin(th) * 10, hy + Math.cos(th) * 10); ctx.lineTo(hx, hy); ctx.stroke();
+  if (legend) {                                                                       // crossguard, jewel and sparkles
+    ctx.strokeStyle = '#ffc933'; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(hx - Math.cos(th) * 30, hy - Math.sin(th) * 30); ctx.lineTo(hx + Math.cos(th) * 30, hy + Math.sin(th) * 30); ctx.stroke();
+    ctx.fillStyle = '#e0245e'; ctx.beginPath(); ctx.arc(hx, hy, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const u = (animTime * 0.35 + i / 4) % 1, x = hx + (tx - hx) * u, y = hy + (ty - hy) * u, r = 7 + 3 * Math.sin(animTime * 9 + i * 2);
+      ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
+    }
+  }
 }
 
 function drawFpOverlays() {
@@ -5896,6 +5941,16 @@ function drawScene() {
   ctx.restore();
 }
 
+// Under the clock: either the sword you're carrying, or the countdown to earning it (not on the last level, and not
+// against Vader, where seven seconds isn't a realistic target).
+function updateLegendHud() {
+  const row = document.getElementById('legendRow'), left = LEGEND_TIME - (elapsed - levelStart);
+  const chasing = left > 0 && currentLevelIndex < levels.length - 1 && !currentLevel.boss;
+  const text = player.legendary ? '⚔ Legendary Sword' + (chasing ? ' · keep it: ' + left.toFixed(1) + 's' : '') : chasing ? '⚔ Legendary sword: ' + left.toFixed(1) + 's' : '';
+  row.classList.toggle('hidden', !text);
+  if (row.textContent !== text) row.textContent = text;
+}
+
 function updateHud(seenNow) {
   updateBabyCmdUI();
   document.getElementById('pauseBtn').classList.toggle('hidden', state !== 'playing');
@@ -5905,6 +5960,7 @@ function updateHud(seenNow) {
   document.getElementById('suspicionFill').style.width = (player.suspicion*100).toFixed(0) + '%';
   document.getElementById('suspicionFill').style.background = seenNow ? '#e23e3e' : (player.suspicion > 0.5 ? '#ff8a33' : '#ffcc33');
   document.getElementById('timeVal').textContent = elapsed.toFixed(1);
+  updateLegendHud();
   const boostRow = document.getElementById('speedBoostRow');
   const boosted = player.speedBoostT > 0;
   boostRow.classList.toggle('hidden', !boosted);
@@ -6142,7 +6198,7 @@ const SAVE_KEY = 'capybara_save_v1';
 function snapshotGame() {
   const pick = (o, keys) => { const r = {}; keys.forEach(k => { r[k] = o[k]; }); return r; };
   return {
-    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives,
+    v: 1, savedAt: Date.now(), level: currentLevelIndex, elapsed, lives, levelStart, legendary: !!player.legendary,
     found: [...friendsFound], escapes: [...friendEscapes], spots: friendSpots, babyMode,
     player: pick(player, ['x', 'y', 'facing', 'hp', 'guard', 'guardBroken', 'speedBoostT']),
     hazards: hazards.map(h => pick(h, ['x', 'y', 'angle', 'hp', 'dead', 'deadT', 'wmode', 'wt', 'wang', 'idx', 'forward'])),
@@ -6174,6 +6230,8 @@ function restoreGame(sv) {
   if (Array.isArray(sv.spots) && sv.spots.length === levels.length) friendSpots = sv.spots;
   loadLevel(sv.level);
   Object.assign(player, sv.player); player.suspicion = 0;
+  levelStart = typeof sv.levelStart === 'number' ? sv.levelStart : sv.elapsed - LEGEND_TIME;     // older saves can't earn it mid-level
+  player.legendary = !!sv.legendary;
   if (sv.hazards.length === hazards.length) hazards.forEach((h, i) => Object.assign(h, sv.hazards[i]));
   if (sv.vehicles.length === vehicles.length) vehicles.forEach((v, i) => Object.assign(v, sv.vehicles[i]));
   if (sv.pickups.length === pickups.length) pickups.forEach((p, i) => Object.assign(p, sv.pickups[i]));
